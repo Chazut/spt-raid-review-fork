@@ -43,18 +43,12 @@ echo ">> Packaging server mod..."
 server_dest="$dist_folder/user/mods/RaidReview"
 mkdir -p "$server_dest"
 
-# Copy main DLL only
-cp "ServerMod/bin/Release/RaidReview/RaidReview.dll" "$server_dest/"
-
-# Copy dependency DLLs into dependencies/ subfolder
-deps_dest="$server_dest/dependencies"
-mkdir -p "$deps_dest"
+# Copy DLLs flat (must be next to RaidReview.dll — .NET resolves them before any mod code runs)
 for f in ServerMod/bin/Release/RaidReview/*.dll; do
     base=$(basename "$f")
     case "$base" in
-        RaidReview.dll) continue ;;                                # Already copied above
         SPTarkov.*|SemanticVersioning.*|JetBrains.*) continue ;;   # Already in SPT server
-        *) cp "$f" "$deps_dest/" ;;
+        *) cp "$f" "$server_dest/" ;;
     esac
 done
 

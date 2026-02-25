@@ -38,15 +38,13 @@
     <PropertyGroup>
       <SptModDir>C:\Games\SPT-4.0\SPT\user\mods\RaidReview</SptModDir>
     </PropertyGroup>
-    <MakeDir Directories="$(SptModDir);$(SptModDir)\dependencies;$(SptModDir)\config" />
-    <!-- Main DLL -->
-    <Copy SourceFiles="$(OutputPath)RaidReview.dll" DestinationFolder="$(SptModDir)" SkipUnchangedFiles="true" />
-    <!-- Dependency DLLs -->
+    <MakeDir Directories="$(SptModDir);$(SptModDir)\config" />
+    <!-- Main DLL + dependency DLLs (must be flat — SPT scans types before any mod code runs) -->
     <ItemGroup>
-      <DepFiles Include="$(OutputPath)*.dll"
-                Exclude="$(OutputPath)RaidReview.dll;$(OutputPath)SPTarkov.*;$(OutputPath)SemanticVersioning.*;$(OutputPath)JetBrains.*" />
+      <ModDlls Include="$(OutputPath)*.dll"
+               Exclude="$(OutputPath)SPTarkov.*;$(OutputPath)SemanticVersioning.*;$(OutputPath)JetBrains.*" />
     </ItemGroup>
-    <Copy SourceFiles="@(DepFiles)" DestinationFolder="$(SptModDir)\dependencies" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(ModDlls)" DestinationFolder="$(SptModDir)" SkipUnchangedFiles="true" />
     <!-- Config -->
     <Copy SourceFiles="config\config.json" DestinationFolder="$(SptModDir)\config" SkipUnchangedFiles="true" />
   </Target>
