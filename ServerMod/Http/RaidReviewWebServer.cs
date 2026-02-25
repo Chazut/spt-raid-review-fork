@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using RaidReview.Config;
 using RaidReview.Database;
 using RaidReview.FileSystem;
@@ -100,6 +101,9 @@ public class RaidReviewWebServer
             options.Listen(IPAddress.Any, _config.WebClientPort);
         });
 
+        // Suppress noisy ASP.NET Core info logs from polluting the SPT server console
+        builder.Logging.SetMinimumLevel(LogLevel.Warning);
+
         builder.Services.AddCors(opts => opts.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader()));
 
         _app = builder.Build();
@@ -174,6 +178,11 @@ public class RaidReviewWebServer
                     ms.SetLength(0);
                 }
             }
+        }
+        catch (WebSocketException)
+        {
+            // Client disconnected abruptly (e.g. game closed) — this is normal, not an error
+            _logger.Debug("WebSocket client disconnected (connection closed without handshake).");
         }
         catch (Exception ex)
         {
