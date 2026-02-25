@@ -22,7 +22,7 @@ You wanted to know what this is about, so here is a snippet of what I'm collecti
 
 **Example of data collected**
 ```json
-{ 
+{
     "raidId": "26a62941-826d-436e-affa-6acca073f4f4",
     "location": "factory4_day",
     "status": "SURVIVED",
@@ -45,10 +45,6 @@ You wanted to know what this is about, so here is a snippet of what I'm collecti
 }
 ```
 
-It's completely anonymous, and all I'm after is some raw numbers for... wel fun?
+It's completely anonymous, and all I'm after is some raw numbers for... well, fun?
 
-If you don't want to be included, just switch the feature flag to `false` in the `config.json`.
-
-### I want to review the files myself
-
-Of course, any code related to sending data from your device can be found here: `/Server/src/Controllers/Telemetry/*`
+If you don't want to be included, just switch the `telemetry_enabled` flag to `false` in `ServerMod/config.json`.

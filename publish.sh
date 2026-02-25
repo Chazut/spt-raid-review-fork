@@ -1,136 +1,84 @@
 #!/usr/bin/env bash
+set -e
 
-# Default
+# Configuration
 default_name="raid_review"
-default_version="0.3.0"
+default_version="0.4.0"
 current_dir=$(pwd)
-linux_server_user=blackdog
-linux_server_host=192.168.40.254
 
-# Display a message
 echo "Let's start the deployment process..."
 
-# Prompt the user for name of the Mod
 read -p "Please enter the name of your Mod [$default_name]: " name
-name=${name:-$default_name}  # Use default if user input is empty
+name=${name:-$default_name}
 
-# Prompt the user for version number of the Mod
 read -p "Please enter the version number of your Mod [$default_version]: " version
-version=${version:-$default_version}  # Use default if user input is empty
+version=${version:-$default_version}
 
 clear
 
-# Create a package folder if it does not exist
-echo ">> Creating distribution folder structure (if not exists)"
-server_package_folder="dist/${name}__${version}/user/mods/${name}__${version}"
-rm -rf "dist/${name}__${version}"
-if [ ! -d "$server_package_folder" ]; then
-    # If it doesn't exist, create it
-    mkdir -p "$server_package_folder"
-    echo ">>> Folder '$server_package_folder' created successfully."
-else
-    echo ">>> Folder '$server_package_folder' already exists."
-fi
+dist_folder="dist/${name}__${version}"
+rm -rf "$dist_folder"
 
-echo "Starting - Windows distribution"
-
-# Build the server app
-echo ">> Building server mod for Windows"
-cd Server
-npm run build-all > /dev/null
-cd "$current_dir"
-rm -f Server/dist/*.zip 
-cp -r Server/dist/* "$server_package_folder"
-rm -rf "$server_package_folder/tmp"
-cd "$server_package_folder"
-npm install > /dev/null
+# 1. Build frontend
+echo ">> Building frontend..."
+cd Private
+npm install --silent
+npm run build
 cd "$current_dir"
 
-# Build the client mod
-echo ">> Building client mod for Windows"
+# 2. Build server mod (embeds frontend into DLL)
+echo ">> Building server mod..."
+cd ServerMod
+dotnet build -c Release --nologo -v q
+cd "$current_dir"
+
+# 3. Build client mod
+echo ">> Building client mod..."
 cd Client
-dotnet build > /dev/null
+dotnet build -c Release --nologo -v q
 cd "$current_dir"
-client_package_folder="dist/${name}__${version}/BepInEx/plugins"
-mkdir -p "$client_package_folder"
-xml_file="Client/RAID-REVIEW.csproj"
-output_path=$(grep -oP '<OutputPath>\K.*?(?=</OutputPath>)' "$xml_file" | sed 's/^\s*//;s/\s*$//')
-ls -l "$output_path" > /dev/null
-for file in "$output_path"/RAID_REVIEW__*.dll; do
-  if [ -f "$file" ]; then
-    echo "Copying $file to $client_package_folder"
-    cp "$file" "$client_package_folder/"
-  else
-    echo "No files matching pattern: $output_path/RAID_REVIEW__*.dll"
-  fi
+
+# 4. Package server mod
+echo ">> Packaging server mod..."
+server_dest="$dist_folder/user/mods/RaidReview"
+mkdir -p "$server_dest"
+
+# Copy server mod output (exclude SPTarkov/SemanticVersioning/JetBrains DLLs — they're in the SPT server already)
+for f in ServerMod/bin/Release/RaidReview/*; do
+    base=$(basename "$f")
+    case "$base" in
+        SPTarkov.*|SemanticVersioning.*|JetBrains.*) continue ;;
+        *) cp -r "$f" "$server_dest/" ;;
+    esac
 done
 
-# ZIP for Windows
-echo ">> Zipping both server and client mod for Windows"
-cd "dist/${name}__${version}"
+# Copy config if not embedded
+if [ -f "ServerMod/config.json" ] && [ ! -f "$server_dest/config.json" ]; then
+    cp "ServerMod/config.json" "$server_dest/"
+fi
+
+# 5. Package client mod
+echo ">> Packaging client mod..."
+client_dest="$dist_folder/BepInEx/plugins"
+mkdir -p "$client_dest"
+
+xml_file="Client/RAID-REVIEW.csproj"
+output_path=$(grep -oP '<OutputPath>\K.*?(?=</OutputPath>)' "$xml_file" | head -1 | sed 's/^\s*//;s/\s*$//')
+for file in "$output_path"/RAID_REVIEW__*.dll; do
+    if [ -f "$file" ]; then
+        echo "  Copying $(basename "$file")"
+        cp "$file" "$client_dest/"
+    fi
+done
+
+# 6. Create ZIP
+echo ">> Creating distribution archive..."
+cd "$dist_folder"
 powershell -Command "Compress-Archive -Force -Path '*' -DestinationPath '../${name}__${version}_windows.zip'" > /dev/null
 cd "$current_dir"
 
-echo "Finished - Windows Distribution"
-echo "Starting - Linux Distribution"
+# Cleanup
+rm -rf "$dist_folder"
 
-# Cleanup node_modules before linux zip
-echo ">> Cleaning up Windows based 'node_modules'"
-cd "$server_package_folder"
-rm -rf node_modules
-cd "$current_dir"
-
-# ZIP for Linux
-echo ">> Zipping both server and client mod for upload to Linux"
-cd "$current_dir"
-cd "dist/${name}__${version}"
-powershell -Command "Compress-Archive -Force -Path '*' -DestinationPath 'linux_deploy.zip'" > /dev/null
-
-# Deploy to Linux server
-echo ">> Uploaded package to server"
-scp "linux_deploy.zip" $linux_server_user@$linux_server_host:~/auto-deploy
-
-# SSH into the server and perform operations
-ssh -q $linux_server_user@$linux_server_host 2> /dev/null << EOF
-  cd ~/auto-deploy
-  sudo su root
-
-  rm -rf /home/blackdog/auto-deploy/BepInEx
-  rm -rf /home/blackdog/auto-deploy/user
-  
-  echo ">>>> Upacking Zip"
-  unzip -o "linux_deploy.zip" -d /home/blackdog/auto-deploy > /dev/null
-  rm -f "linux_deploy.zip"
-
-  chmod 777 /home/blackdog/auto-deploy/user
-  chmod 777 /home/blackdog/auto-deploy/BepInEx
-
-  echo ">>>> Installing linux 'node_module' dependencies"
-  cd /home/blackdog/auto-deploy/user/mods/${name}__${version}
-  # npm install > /dev/null
-  cd /home/blackdog/auto-deploy
-
-  echo ">>>> Packaging linux distribution"
-  tar -czvhf ${name}__${version}_linux.tar.gz *
-  ls -l | grep gz
-
-  exit
-EOF
-
-# Download file
-scp $linux_server_user@$linux_server_host:~/auto-deploy/${name}__${version}_linux.tar.gz $current_dir/dist
-echo "Finished - Linux Distribution"
-
-# Clean up local
-cd "$current_dir"
-rm -rf "dist/${name}__${version}"
-rm -f "dist/linux_deploy.zip"
-
-# Clean up remote
-ssh -q $linux_server_user@$linux_server_host 2> /dev/null << EOF
-  cd ~/auto-deploy
-  sudo su root
-  rm -rf /home/blackdog/auto-deploy/*
-EOF
-
-echo "Finished"
+echo ""
+echo "Finished! Archive: dist/${name}__${version}_windows.zip"

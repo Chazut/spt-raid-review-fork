@@ -1,1 +1,0 @@
-INSERT INTO setting (key, value, type) VALUES ('v2_to_v3_migration__completed', '0', 'MIGRATION');

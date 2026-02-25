@@ -1,8 +1,7 @@
 
 import { Link, useLoaderData, useNavigate } from 'react-router-dom';
 
-import { TrackingRaidData } from '../../types/api_types';
-import { ISptProfile } from '../../../../Server/types/models/eft/profile/ISptProfile';
+import { TrackingRaidData, ISptProfile } from '../../types/api_types';
 import api from '../../api/api';
 import { LOCATIONS } from '../../helpers/locations';
 

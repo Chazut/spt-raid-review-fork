@@ -4,75 +4,106 @@ This guide will help you get started if you want to contribute to the project or
 
 ## Requirements
 
-- Visual Studio 2022
-- Visual Studio Code
-- NodeJS v18.17.0
-- Escape From Tarkov
-- SPT Installation
+- .NET 9 SDK (for ServerMod)
+- .NET Framework 4.7.2 targeting pack (for Client)
+- Visual Studio 2022 or VSCode with C# extensions
+- Node.js v18+ (for frontend)
+- Escape From Tarkov + SPT 4.0.X installation
 
-## SPT Client Mod `/Client`
+## Project Structure
 
-The BepInEx plugin/SPT client mod setup is straightforward.
+```
+Client/       C# BepInEx plugin (.NET 4.7.2) — patches game methods, sends data via WebSocket
+ServerMod/    C# SPT 4.0 server mod (.NET 9) — Kestrel HTTP/WS server, SQLite, REST API
+Private/      React 18 + TypeScript + Vite — web UI for raid review and replay
+```
 
-### Development Setup
+## Client Mod `/Client`
 
-1. Open the solution in Visual Studio 2022.
-2. Import the required dependencies:
-   - Review `RAID-REVIEW.csproj` for a list of required dependencies.
-   - Dependencies can be found in the `\BepInEx\plugins\spt` or `\EscapeFromTarkov_Data\Managed` folders of your SPT Installation.
-   - Right-click on the `Dependencies` node in the solution explorer, select `Add Project References`, and browse to the `/dependencies` folder to import them.
-3. Update `<OutputPath>...</OutputPath>` to the full path of your SPT Installation for development/debugging.
-4. Start making your changes.
+The BepInEx plugin patches EFT game methods to capture raid data and stream it via WebSocket to the server mod.
 
-### Building the Solution
+### Setup
 
-1. Open a PowerShell terminal.
-2. Run `dotnet build`.
+1. Open the solution in Visual Studio 2022 (or use `dotnet build` from CLI).
+2. Review `RAID-REVIEW.csproj` for required dependencies — they are referenced from `dependencies/4.0.X/`.
+3. Copy the required DLLs from your SPT installation's `BepInEx/plugins/spt/` and `EscapeFromTarkov_Data/Managed/` folders into `Client/dependencies/4.0.X/`.
+4. Update `<OutputPath>` in `RAID-REVIEW.csproj` to point to your SPT installation's `BepInEx/plugins/` folder.
 
-If the build is successful, the output will be in the destination path configured in `<OutputPath>...</OutputPath>` in `RAID-REVIEW.csproj`.
+### Build
 
-## SPT Server Modification `/Server`
+```bash
+cd Client
+dotnet build
+```
 
-1. Open the project in VSCode.
-2. Open Terminal and navigate to `/Server`.
-3. Install dependencies by running `npm install`.
-4. Start making your changes.
+Output: `RAID_REVIEW__0.4.0.dll` deployed to the configured `<OutputPath>`.
 
-## Custom Web Server `/Server/src/Server`
+## Server Mod `/ServerMod`
 
-No setup required. Project dependencies are listed in `/Server/package.json`. Currently, this cannot be run/tested outside of the SPT Server. Hot-reload for debugging is not implemented yet.
+The C# server mod runs inside the SPT 4.0 server process. It starts a standalone Kestrel server on two ports:
+- **Port 7828**: WebSocket — receives real-time data from the client mod
+- **Port 7829**: HTTP — serves the React frontend + REST API
 
-## Custom Web Client `/Private`
+### Setup
 
-### Development Setup
+1. Install [SPTarkov NuGet packages](https://nuget.pkg.github.com/sp-tarkov/): `SPTarkov.Common`, `SPTarkov.DI`, `SPTarkov.Server.Core` (v4.0.5).
+2. The `.csproj` auto-deploys to `C:\Games\SPT-4.0\SPT\user\mods\RaidReview\` after build — update this path if your SPT installation is elsewhere.
 
-1. Open the project in VSCode.
-2. Edit the `base_directory` file, replacing the path with the full path of your SPT Installation for development/debugging.
-3. Open Terminal and navigate to `/Private`.
-4. Install dependencies by running `npm install`.
-5. Start the development server with hot-reload using `npm run dev`.
-6. Start making your changes.
+### Build
 
-### Building the Solution
+```bash
+cd ServerMod
+dotnet build
+```
 
-1. Open Terminal and run `npm run build-all`.
+Output: `RaidReview.dll` + dependencies deployed to `user/mods/RaidReview/`.
 
-If the build is successful, the output will be in the destination path configured in the `base_directory` file.
+## Frontend `/Private`
 
-## Workflow / Debugging
+The React frontend is built with Vite and outputs to `ServerMod/public/`, where it gets embedded into the server mod DLL as resources.
 
-- **Client Mod** `/Client`
-  - Work in Visual Studio 2022, make changes, build, and launch the game.
-- **Server Mod** `/Server/src/mod.ts`
-- **Web Server** `/Server/src/Server/express.ts` 
-  - Work in Visual Studio Code, make changes, build, and launch the server.
-- **Web Client** `/Private`
-  - Work in Visual Studio Code, launch the SPT Server with a RAID-REVIEW build deployed, make changes, build, and launch the server.
+### Development (hot-reload)
 
-# Data Capture Process Overview
+```bash
+cd Private
+npm install
+npm run dev
+```
 
-The client mod patches various `C# Methods` using the BepInEx Framework. The targeted methods are used by the game to perform tasks like shooting, applying damage, kills, and starting/ending raids.
+The dev server runs on `http://localhost:5173` and proxies API calls to `http://127.0.0.1:7829` (requires the SPT server to be running with the mod deployed).
 
-Data is structured in custom `C# Classes`, serialized to JSON, and sent via WebSockets from the client to the backend in real-time. The backend writes the data to a SQLite database (`<mod_folder>/data/spt_raid_review.db`), and positional data is written to a CSV file specific to a raid (`<mod_folder>/data/positions/<raid_id>_positions`).
+### Production Build
 
-Once a raid is completed, a workflow starts to collate the data into a `.json` file in the same positions folder, which can later be consumed by the HTTP Server and exposed via the API.
+```bash
+cd Private
+npm run build
+```
+
+Output goes to `ServerMod/public/`. Then rebuild the server mod to embed the fresh frontend:
+
+```bash
+cd ServerMod
+dotnet build
+```
+
+## Full Build (all components)
+
+```bash
+cd Private && npm run build
+cd ../ServerMod && dotnet build
+cd ../Client && dotnet build
+```
+
+## Workflow
+
+- **Client mod changes**: edit in VS2022 or VSCode, `dotnet build`, launch game.
+- **Server mod changes**: edit in VSCode, `dotnet build`, restart SPT server.
+- **Frontend changes**: `npm run dev` in `/Private` for hot-reload; `npm run build` + `dotnet build` in `/ServerMod` before deploying.
+
+## Data Capture Overview
+
+The client mod patches various C# methods using the BepInEx Framework. The targeted methods handle shooting, applying damage, kills, looting, and starting/ending raids.
+
+Data is structured in custom C# classes, serialized to JSON, and sent via WebSocket from the client to the server in real-time. The server writes the data to a SQLite database (`<mod_folder>/data/spt_raid_review.db`), and positional data is written to CSV files (`<mod_folder>/data/positions/<raid_id>_positions`).
+
+Once a raid is completed, a post-processing workflow compiles the positional CSV data into a JSON file that the HTTP API serves to the frontend for replay.

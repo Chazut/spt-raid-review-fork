@@ -1,17 +1,15 @@
-# C# Project Ignores
+# C# build artifacts
 .vs
 obj
+bin
 *.dll
+
+# Node
 node_modules
-dist
-Tools/**/**.png
-Server/src/Web/Server/public/assets/*
-Server/src/Web/Server/public/assets/index-7f92f0ab.js
-Server/src/Web/Server/public/assets/index-0c1a950b.css
-Server/tmp
-Tools/**/config.js
-Tools/**/cloudflareDump/data/**
 .vite
+
+# Build output
+dist
 
 # Claude Code
 .claude/

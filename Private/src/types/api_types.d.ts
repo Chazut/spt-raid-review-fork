@@ -96,3 +96,11 @@ export interface TrackingBallistic {
 export interface RaidReviewServerSettings {
   telemetry_enabled: string,
 }
+
+/** Minimal SPT profile type — only fields used by the frontend */
+export interface ISptProfile {
+  info: {
+    id: string;
+    username: string;
+  };
+}

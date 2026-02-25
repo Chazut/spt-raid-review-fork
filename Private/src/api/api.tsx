@@ -1,4 +1,4 @@
-import { ISptProfile } from '../../../Server/types/models/eft/profile/ISptProfile';
+import { ISptProfile } from '../types/api_types';
 import { TrackingRaidData, TrackingCoreDataRaids } from '../types/api_types';
 
 let isDev = window.location.host.includes("5173");

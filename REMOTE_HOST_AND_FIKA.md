@@ -4,7 +4,7 @@ The FIKA Mod is **not** completely supported at this stage. However, with help f
 
 ## Requirements
 
-- SPT Installation
+- SPT 4.0.X Installation
 - [Optional] FIKA Installation
 - Understanding of networking, routing, firewalls, and port forwarding.
 
@@ -14,9 +14,9 @@ If you're hosting SPT/FIKA on a remote host, consider the following changes.
 
 ### Server Mod Settings
 
-- Open the mod folder `\user\mods\raid_review__x.x.x`.
+- Open the mod folder `\user\mods\RaidReview`.
 - Open the `config.json` file in VSCode (or your preferred editor).
-- In this file, you will have options to change the HTTP and Web Socket server ports.
+- In this file, you will have options to change the HTTP and WebSocket server ports.
   - If you change these values, **make sure** you also adjust your Client Mod settings via the F12 menu.
 
 ### Client Mod Settings
@@ -40,7 +40,6 @@ If you're hosting SPT/FIKA on a remote host, consider the following changes.
 
 ## Basic Auth
 
-- Open the `\user\mods\raid_review__x.x.x\config.json` file in VSCode (or your preferred editor).
+- Open the `\user\mods\RaidReview\config.json` file in VSCode (or your preferred editor).
 - You can enable `Basic Auth`, as well as register "accounts" to log into the web client.
   - The username/password is what YOU have set against your SPT profile, if you have not set a password, it will be blank.
-  
