@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>RaidReview</RootNamespace>
+    <AssemblyName>RaidReview</AssemblyName>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <OutputType>Library</OutputType>
+    <Version>0.4.0</Version>
+    <OutputPath>bin\$(Configuration)\$(AssemblyName)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <!-- Copy NuGet runtime deps to output folder -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- SPTarkov packages are already in the SPT server folder — don't copy them to the mod folder -->
+    <PackageReference Include="SPTarkov.Common" Version="4.0.5" ExcludeAssets="runtime" />
+    <PackageReference Include="SPTarkov.DI" Version="4.0.5" ExcludeAssets="runtime" />
+    <PackageReference Include="SPTarkov.Server.Core" Version="4.0.5" ExcludeAssets="runtime" />
+    <!-- SQLite — use winsqlite3.dll (built into Windows 10/11) to avoid native DLL path issues -->
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="9.0.0" />
+    <PackageReference Include="SQLitePCLRaw.bundle_winsqlite3" Version="2.1.10" />
+  </ItemGroup>
+
+  <!-- Embed the React frontend INTO the DLL (avoids .js files in the mod folder,
+       which SPT's ModValidator.ValidMod() would reject as a legacy JS mod) -->
+  <ItemGroup>
+    <EmbeddedResource Include="public\**\*">
+      <!-- LogicalName = "frontend/" + relative path — preserves directory structure without dots-as-separators ambiguity -->
+      <LogicalName>frontend/%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!-- Copy ALL output files to SPT user/mods folder after build -->
+  <Target Name="DeployToSpt" AfterTargets="Build">
+    <MakeDir Directories="C:\Games\SPT-4.0\SPT\user\mods\RaidReview" />
+    <ItemGroup>
+      <DeployFiles Include="$(OutputPath)**\*"
+                   Exclude="$(OutputPath)**\SPTarkov.*;$(OutputPath)**\SemanticVersioning.*;$(OutputPath)**\JetBrains.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(DeployFiles)"
+          DestinationFiles="@(DeployFiles->'C:\Games\SPT-4.0\SPT\user\mods\RaidReview\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true" />
+  </Target>
+
+</Project>

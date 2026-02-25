@@ -57,7 +57,7 @@ export default function Raids() {
                     {
                         raids.length > 0 ? raids.map((r) => (
                         <tr key={r.raidId}>
-                            <td className="text-left p-2 capitalize">{ profiles[r.profileId]?.info.username }</td>
+                            <td className="text-left p-2 capitalize">{ profiles[r.profileId]?.info?.username || r.profileId?.substring(0, 8) + '...' }</td>
                             <td className="text-left p-2">{ r.type }</td>
                             <td className="text-left p-2">{ getLocation(r.location) }</td>
                             <td className="text-left p-2">{ r.exitStatus }</td>

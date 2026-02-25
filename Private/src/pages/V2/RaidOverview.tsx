@@ -210,7 +210,7 @@ export default function RaidOverview() {
               <td className="text-center p-2 uppercase border-x border-eft">{ p.group }</td>
               <td className="text-center p-2 uppercase border-x border-eft">{ p.level }</td>
               <td className="text-left p-2">{KIA ? '' : ' 💀 '}{ intl(p.name, intl_dir) }</td>
-              <td className="text-right p-2 capitalize">{ raid.detectedMods.match(/SAIN/gi) ? SAIN : '' }</td>
+              <td className="text-right p-2 capitalize">{ raid.detectedMods?.match(/SAIN/gi) ? SAIN : '' }</td>
               <td className="text-center p-2 w-12 border-l border-eft">{ calcStats ? calcStats.get(p.profileId)?.kills || '-' : null  }</td>
               <td className={`text-center p-2 w-12 ${(calcStats && (calcStats.get(p.profileId)?.lootings || 0) < 0) ? 'text-red-400' : 'text-green-400'}`}>{ calcStats ? calcStats.get(p.profileId)?.lootings || '-'  : null }</td>
               <td className="text-center p-2 w-12">
@@ -253,7 +253,7 @@ export default function RaidOverview() {
                         <th className={`text-right px-2 underline cursor-pointer ${groupedByType === 'GROUP' ? 'bg-black text-eft' : ''}`} onClick={() => setGroupedByType('GROUP')}>Team</th>
                         <th className="text-right px-2">Lvl</th>
                         <th className="text-left px-2">Username</th>
-                        <th className="text-right px-2"> { raid.detectedMods.match(/SAIN/gi) ? 'SAIN' : '' }</th>
+                        <th className="text-right px-2"> { raid.detectedMods?.match(/SAIN/gi) ? 'SAIN' : '' }</th>
                         <th className="text-center px-2" title="Kills">K</th>
                         <th className="text-center px-2" title="Looted items">L</th>
                         <th className="text-center px-2" title="Accuracy">A%</th>

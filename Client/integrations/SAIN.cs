@@ -20,9 +20,9 @@ namespace RAID_REVIEW
             try
             {
 
-                Type sainBotControllerType = Type.GetType("SAIN.Components.SAINBotController, SAIN");
+                Type sainBotControllerType = Type.GetType("SAIN.Components.BotManagerComponent, SAIN");
                 Type botComponentType = Type.GetType("SAIN.Components.BotComponent, SAIN");
-                Type ePersonalityType = Type.GetType("SAIN.EPersonality, SAIN");
+                Type ePersonalityType = Type.GetType("SAIN.Models.Preset.Personalities.EPersonality, SAIN");
 
                 if (sainBotControllerType == null)
                 {
@@ -46,9 +46,16 @@ namespace RAID_REVIEW
                         LoggerInstance.Log.LogInfo("RAID_REVIEW :::: INFO :::: Looking For SAIN Bot Controller");
                         if (RAID_REVIEW.gameWorld != null)
                         {
-                            // Use reflection to get the SAINBotController component
+                            // Use reflection to get the BotManagerComponent
                             MethodInfo getComponentMethod = RAID_REVIEW.gameWorld.GetType().GetMethod("GetComponent", new Type[] { typeof(Type) });
                             RAID_REVIEW.sainBotController = getComponentMethod?.Invoke(RAID_REVIEW.gameWorld, new object[] { sainBotControllerType });
+
+                            // Fallback: try static Instance property
+                            if (RAID_REVIEW.sainBotController == null)
+                            {
+                                var instanceProp = sainBotControllerType.GetProperty("Instance", BindingFlags.Public | BindingFlags.Static);
+                                RAID_REVIEW.sainBotController = instanceProp?.GetValue(null);
+                            }
 
                             if (RAID_REVIEW.sainBotController != null)
                                 LoggerInstance.Log.LogInfo("RAID_REVIEW :::: INFO :::: SAIN Bot Controller Found");
@@ -95,6 +102,10 @@ namespace RAID_REVIEW
                                 }
 
                                 var botDifficulty = info?.GetType().GetProperty("BotDifficulty")?.GetValue(info);
+                                if (botDifficulty == null)
+                                {
+                                    botDifficulty = profile?.GetType().GetProperty("BotDifficulty")?.GetValue(profile);
+                                }
                                 if (botDifficulty == null)
                                 {
                                     botDifficulty = profile?.GetType().GetField("BotDifficulty")?.GetValue(profile);

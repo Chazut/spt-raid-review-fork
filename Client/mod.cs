@@ -139,7 +139,7 @@ namespace RAID_REVIEW
 
                     if (sessionId == null && gameWorld != null && myPlayer != null && gameWorld.CurrentProfileId != null)
                     {
-                        sessionId = gameWorld.CurrentProfileId;
+                        sessionId = gameWorld.CurrentProfileId.ToString();
                     }
 
                     // IF RAID HAS NOT STARTED, RETURN

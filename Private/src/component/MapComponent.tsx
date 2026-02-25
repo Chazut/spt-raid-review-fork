@@ -843,10 +843,10 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
 
     function highlight(coords, time) {
         if (!MAP) return
-        const frameIndex = findInsertIndex(time, sliderTimes) + 1
+        const frameIndex = Math.min(findInsertIndex(time, sliderTimes) + 1, sliderTimes.length - 1)
         setTimeCurrentIndex(frameIndex)
-        setTimeEndLimit(sliderTimes[frameIndex])
-        setTimeStartLimit(sliderTimes[frameIndex - dropOffIndex])
+        setTimeEndLimit(sliderTimes[frameIndex] ?? sliderTimes[sliderTimes.length - 1] ?? 0)
+        setTimeStartLimit(sliderTimes[Math.max(0, frameIndex - dropOffIndex)] ?? 0)
         MAP.flyToBounds(coords, { maxZoom: 4, animate: true })
         return
     }

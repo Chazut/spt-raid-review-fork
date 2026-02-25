@@ -181,7 +181,7 @@ export default function RaidCharts() {
     return (
         <section className="chart-container">
 
-            { raid.detectedMods.match(/SAIN/gi) ? 
+            { raid.detectedMods?.match(/SAIN/gi) ?
             <div className="gauges my-4">
                 <div>
                     <div className='text-center w-full text-lg font-bold bg-eft text-black'>Bots By Team</div>

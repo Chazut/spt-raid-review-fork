@@ -30,7 +30,7 @@ namespace RAID_REVIEW
                         profileId = __instance.ProfileId,
                         time = RAID_REVIEW.stopwatch.ElapsedMilliseconds,
                         itemId = item.Id,
-                        itemName = item.ShortName,
+                        itemName = item.LocalizedShortName(),
                         qty = item.StackObjectsCount,
                         type = item.QuestItem ? "QUEST_ITEM" : "LOOT",
                         added = added

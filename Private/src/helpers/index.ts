@@ -1,6 +1,7 @@
 export function msToHMS( ms: number ) : string {
-    if (ms !== null) {
-      return new Date(Number(ms)).toISOString().slice(11,19);
+    const n = Number(ms);
+    if (ms != null && !isNaN(n) && isFinite(n)) {
+      return new Date(n).toISOString().slice(11,19);
     }
     return ''
 }

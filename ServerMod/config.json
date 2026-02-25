@@ -1,0 +1,15 @@
+{
+    "web_socket_port": 7828,
+    "web_client_port": 7829,
+    "authentication": false,
+    "telemetry": false,
+    "autoDelete": true,
+    "autoDeleteLimit": 30,
+    "autoDeleteUnfinishedRaids": true,
+    "autoDeleteCronJob": true,
+    "enableLogFiles": true,
+    "maximumLogFiles": 5,
+    "enableDebugLogs": false,
+    "session_manager__raid_timeout": 5,
+    "session_manager__player_timeout": 240
+}
