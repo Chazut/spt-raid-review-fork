@@ -22,7 +22,7 @@ public class RaidReviewConfig
 
     public static RaidReviewConfig Load(string modFolder)
     {
-        var configPath = Path.Combine(modFolder, "config.json");
+        var configPath = Path.Combine(modFolder, "config", "config.json");
         if (File.Exists(configPath))
         {
             try

@@ -10,6 +10,7 @@ using RaidReview.PostRaid;
 using RaidReview.Session;
 using RaidReview.WebSocket;
 using System.Reflection;
+using System.Runtime.Loader;
 
 namespace RaidReview;
 
@@ -30,6 +31,17 @@ public class RaidReviewMod : IOnLoad
         // Locate mod folder (same directory as this DLL)
         var modFolder = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)
             ?? AppContext.BaseDirectory;
+
+        // Resolve dependencies from the "dependencies" subfolder
+        var depsFolder = Path.Combine(modFolder, "dependencies");
+        AssemblyLoadContext.Default.Resolving += (context, assemblyName) =>
+        {
+            var candidate = Path.Combine(depsFolder, assemblyName.Name + ".dll");
+            if (File.Exists(candidate))
+                return context.LoadFromAssemblyPath(candidate);
+            return null;
+        };
+
         var dataFolder = Path.Combine(modFolder, "data");
 
         // Load config

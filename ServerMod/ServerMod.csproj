@@ -33,16 +33,22 @@
     </EmbeddedResource>
   </ItemGroup>
 
-  <!-- Copy ALL output files to SPT user/mods folder after build -->
+  <!-- Deploy to SPT user/mods folder after build with clean structure -->
   <Target Name="DeployToSpt" AfterTargets="Build">
-    <MakeDir Directories="C:\Games\SPT-4.0\SPT\user\mods\RaidReview" />
+    <PropertyGroup>
+      <SptModDir>C:\Games\SPT-4.0\SPT\user\mods\RaidReview</SptModDir>
+    </PropertyGroup>
+    <MakeDir Directories="$(SptModDir);$(SptModDir)\dependencies;$(SptModDir)\config" />
+    <!-- Main DLL -->
+    <Copy SourceFiles="$(OutputPath)RaidReview.dll" DestinationFolder="$(SptModDir)" SkipUnchangedFiles="true" />
+    <!-- Dependency DLLs -->
     <ItemGroup>
-      <DeployFiles Include="$(OutputPath)**\*"
-                   Exclude="$(OutputPath)**\SPTarkov.*;$(OutputPath)**\SemanticVersioning.*;$(OutputPath)**\JetBrains.*" />
+      <DepFiles Include="$(OutputPath)*.dll"
+                Exclude="$(OutputPath)RaidReview.dll;$(OutputPath)SPTarkov.*;$(OutputPath)SemanticVersioning.*;$(OutputPath)JetBrains.*" />
     </ItemGroup>
-    <Copy SourceFiles="@(DeployFiles)"
-          DestinationFiles="@(DeployFiles->'C:\Games\SPT-4.0\SPT\user\mods\RaidReview\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(DepFiles)" DestinationFolder="$(SptModDir)\dependencies" SkipUnchangedFiles="true" />
+    <!-- Config -->
+    <Copy SourceFiles="config\config.json" DestinationFolder="$(SptModDir)\config" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

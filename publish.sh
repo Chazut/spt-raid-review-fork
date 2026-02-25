@@ -43,30 +43,38 @@ echo ">> Packaging server mod..."
 server_dest="$dist_folder/user/mods/RaidReview"
 mkdir -p "$server_dest"
 
-# Copy server mod output (exclude SPTarkov/SemanticVersioning/JetBrains DLLs — they're in the SPT server already)
-for f in ServerMod/bin/Release/RaidReview/*; do
+# Copy main DLL only
+cp "ServerMod/bin/Release/RaidReview/RaidReview.dll" "$server_dest/"
+
+# Copy dependency DLLs into dependencies/ subfolder
+deps_dest="$server_dest/dependencies"
+mkdir -p "$deps_dest"
+for f in ServerMod/bin/Release/RaidReview/*.dll; do
     base=$(basename "$f")
     case "$base" in
-        SPTarkov.*|SemanticVersioning.*|JetBrains.*) continue ;;
-        *) cp -r "$f" "$server_dest/" ;;
+        RaidReview.dll) continue ;;                                # Already copied above
+        SPTarkov.*|SemanticVersioning.*|JetBrains.*) continue ;;   # Already in SPT server
+        *) cp "$f" "$deps_dest/" ;;
     esac
 done
 
-# Copy config if not embedded
-if [ -f "ServerMod/config.json" ] && [ ! -f "$server_dest/config.json" ]; then
-    cp "ServerMod/config.json" "$server_dest/"
-fi
+# Copy config
+mkdir -p "$server_dest/config"
+cp "ServerMod/config/config.json" "$server_dest/config/"
 
 # 5. Package client mod
 echo ">> Packaging client mod..."
 client_dest="$dist_folder/BepInEx/plugins"
 mkdir -p "$client_dest"
 
-xml_file="Client/RAID-REVIEW.csproj"
-output_path=$(grep -oP '<OutputPath>\K.*?(?=</OutputPath>)' "$xml_file" | head -1 | sed 's/^\s*//;s/\s*$//')
+# Read OutputPath from the csproj (handles custom paths like C:\Games\SPT-4.0\BepInEx\plugins\)
+output_path=$(sed -n 's/.*<OutputPath>\(.*\)<\/OutputPath>.*/\1/p' Client/RAID-REVIEW.csproj | head -1 | tr -d '\r' | sed 's/\s*$//')
+if [ -z "$output_path" ]; then
+    output_path="Client/bin/Release"
+fi
 for file in "$output_path"/RAID_REVIEW__*.dll; do
     if [ -f "$file" ]; then
-        echo "  Copying $(basename "$file")"
+        echo "  Copying $(basename "$file") from $output_path"
         cp "$file" "$client_dest/"
     fi
 done
