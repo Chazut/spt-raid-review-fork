@@ -12,3 +12,11 @@ Server/tmp
 Tools/**/config.js
 Tools/**/cloudflareDump/data/**
 .vite
+
+# Claude Code
+.claude/
+CLAUDE.md
+
+# ServerMod build artifacts
+ServerMod/bin/
+ServerMod/public/
