@@ -88,7 +88,7 @@ public class RaidPositionCompiler
         {
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         });
-        _fileService.WriteLineToFile("positions", "", "", outputPath, "", json);
+        _fileService.WriteFile("positions", "", "", outputPath, json);
 
         _logger.Log($"Finished compiling positional data for '{raidGuid}'.");
         return grouped;

@@ -314,6 +314,12 @@ public class RaidReviewWebServer
         app.MapGet("/api/raids/{raidId}/positions", async (HttpContext context, string raidId) =>
         {
             var raw = _fileService.ReadFile("positions", "", "", $"{raidId}_{_compiler.ActiveVersion}_positions.json");
+            // Compile on-demand if missing but raw CSV exists
+            if (raw == null && _fileService.FileExists("positions", "", "", $"{raidId}_positions"))
+            {
+                _compiler.Compile(raidId);
+                raw = _fileService.ReadFile("positions", "", "", $"{raidId}_{_compiler.ActiveVersion}_positions.json");
+            }
             if (raw != null)
             {
                 context.Response.ContentType = "application/json";
@@ -328,6 +334,12 @@ public class RaidReviewWebServer
         app.MapGet("/api/raids/{raidId}/positions/heatmap", async (HttpContext context, string raidId) =>
         {
             var raw = _fileService.ReadFile("positions", "", "", $"{raidId}_{_compiler.ActiveVersion}_positions.json");
+            // Compile on-demand if missing but raw CSV exists
+            if (raw == null && _fileService.FileExists("positions", "", "", $"{raidId}_positions"))
+            {
+                _compiler.Compile(raidId);
+                raw = _fileService.ReadFile("positions", "", "", $"{raidId}_{_compiler.ActiveVersion}_positions.json");
+            }
             if (raw == null)
             {
                 await context.Response.WriteAsJsonAsync(new object[] { });

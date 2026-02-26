@@ -16,6 +16,14 @@ public class DataFileService
         return Path.Combine(parts.ToArray());
     }
 
+    public void WriteFile(string parentFolder, string subFolder, string targetFolder, string fileName, string content)
+    {
+        var path = BuildPath(parentFolder, subFolder, targetFolder, fileName);
+        var dir = Path.GetDirectoryName(path)!;
+        Directory.CreateDirectory(dir);
+        File.WriteAllText(path, content);
+    }
+
     public void WriteLineToFile(string parentFolder, string subFolder, string targetFolder, string fileName, string keys, string value)
     {
         var path = BuildPath(parentFolder, subFolder, targetFolder, fileName);
