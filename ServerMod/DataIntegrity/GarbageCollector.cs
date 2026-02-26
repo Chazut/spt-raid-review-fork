@@ -62,13 +62,13 @@ public class GarbageCollector
 
         _logger.Log("Garbage collector deleting unfinished raids.");
 
-        var allRaids = await _db.QueryAsync("SELECT * FROM raid LIMIT 1000000");
+        // Unfinished raids have an empty exitStatus (END packet never arrived to update it)
+        var unfinishedRaids = await _db.QueryAsync(
+            "SELECT raidId FROM raid WHERE exitStatus = '' OR exitStatus IS NULL");
 
-        // Raids that don't have exactly 2 entries (start + end) are unfinished
-        var raidCounts = allRaids
-            .GroupBy(r => r["raidId"]?.ToString() ?? "")
-            .Where(g => g.Count() != 2)
-            .Select(g => g.Key)
+        var raidCounts = unfinishedRaids
+            .Select(r => r["raidId"]?.ToString() ?? "")
+            .Where(id => !string.IsNullOrEmpty(id))
             .ToList();
 
         if (raidCounts.Count == 0)
