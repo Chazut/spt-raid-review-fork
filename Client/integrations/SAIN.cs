@@ -121,7 +121,16 @@ namespace RAID_REVIEW
 
                                 if (!isPMC)
                                 {
-                                    trackingPlayer.type = getBotType(info, profile);
+                                    var sainType = getBotType(info, profile);
+                                    // Only update if current type is generic or SAIN provides a specific (non-scav) type.
+                                    // Custom faction mods register bots that SAIN sees as "assault" internally,
+                                    // but mod.cs already identified them correctly via player.Profile.Info.Settings.Role.
+                                    bool currentIsGeneric = trackingPlayer.type == "BOT" || trackingPlayer.type == "UNKNOWN" || trackingPlayer.type == "SCAV|SCAV";
+                                    bool sainIsGeneric = sainType == "SCAV|SCAV" || sainType == "SCAV GROUP|SCAV" || sainType == "CRAZY SCAV EVENT|SCAV" || sainType == "TAGGED AND CURSED SCAV|SCAV";
+                                    if (currentIsGeneric || !sainIsGeneric)
+                                    {
+                                        trackingPlayer.type = sainType;
+                                    }
                                 }
 
                                 RAID_REVIEW.trackingPlayers[trackingPlayer.profileId] = trackingPlayer;
@@ -292,11 +301,69 @@ namespace RAID_REVIEW
                         case "followerKolontaySecurity":
                             RR_WildSpawnType = "KOLONTAY SECURITY|FOLLOWER";
                             break;
+                        case "bossPartisan":
+                            RR_WildSpawnType = "PARTIZAN|BOSS";
+                            break;
                         case "shooterBTR":
                             RR_WildSpawnType = "BTR|OTHER";
                             break;
+
+                        // THE MERCENARY
+                        case "mercenary":
+                            RR_WildSpawnType = "MERCENARY|MERCENARY";
+                            break;
+
+                        // RUAF Come Home
+                        case "ruafRifleman":
+                            RR_WildSpawnType = "RUAF RIFLEMAN|RUAF";
+                            break;
+                        case "ruafRiflemanSenior":
+                            RR_WildSpawnType = "RUAF SENIOR RIFLEMAN|RUAF";
+                            break;
+                        case "ruafAutorifleman":
+                            RR_WildSpawnType = "RUAF AUTORIFLEMAN|RUAF";
+                            break;
+                        case "ruafGrenadier":
+                            RR_WildSpawnType = "RUAF GRENADIER|RUAF";
+                            break;
+                        case "ruafMarksman":
+                            RR_WildSpawnType = "RUAF MARKSMAN|RUAF";
+                            break;
+                        case "ruafMachinegunner":
+                            RR_WildSpawnType = "RUAF MACHINEGUNNER|RUAF";
+                            break;
+
+                        // UNTAR Go Home
+                        case "followeruntar":
+                            RR_WildSpawnType = "UNTAR GUARD|UNTAR";
+                            break;
+                        case "bossuntarlead":
+                            RR_WildSpawnType = "UNTAR SQUAD LEADER|UNTAR";
+                            break;
+                        case "followeruntarmarksman":
+                            RR_WildSpawnType = "UNTAR MARKSMAN|UNTAR";
+                            break;
+                        case "bossuntarofficer":
+                            RR_WildSpawnType = "UNTAR OFFICER|UNTAR";
+                            break;
+
+                        // Black Division
+                        case "blackDivLead":
+                            RR_WildSpawnType = "BLACK DIV LEAD|BLACKDIV";
+                            break;
+                        case "blackDivAssault":
+                            RR_WildSpawnType = "BLACK DIV ASSAULT|BLACKDIV";
+                            break;
+                        case "blackDivBreacher":
+                            RR_WildSpawnType = "BLACK DIV BREACHER|BLACKDIV";
+                            break;
+                        case "blackDivSupport":
+                            RR_WildSpawnType = "BLACK DIV SUPPORT|BLACKDIV";
+                            break;
+
                         default:
-                            RR_WildSpawnType = "UNKNOWN";
+                            // Graceful fallback for unknown custom faction mods
+                            RR_WildSpawnType = wildSpawnType.ToString().ToUpper() + "|FACTION_MOD";
                             break;
                     }
                 }
@@ -307,8 +374,8 @@ namespace RAID_REVIEW
                     RR_WildSpawnType = "PLAYER_SCAV|SCAV";
                 }
 
-                // If a boss hasn't already been found, but the 'IsBoss' flag is true, return a 'boss'
-                if (!RR_WildSpawnType.EndsWith("BOSS") && isBoss)
+                // If no specific type was identified, but the 'IsBoss' flag is true, return a 'boss'
+                if (RR_WildSpawnType == "UNKNOWN" && isBoss)
                 {
                     RR_WildSpawnType = "CUSTOM|BOSS";
                 }

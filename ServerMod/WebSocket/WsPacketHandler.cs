@@ -94,7 +94,9 @@ public class WsPacketHandler
             }
             else if (raidId == null && action != "START")
             {
-                _logger.Debug($"[MISSING_VALUE:'raidId'] {action}|{payloadStr}");
+                // PLAYER_CHECK often arrives right after END clears the raidId — expected, suppress noise
+                if (action != "PLAYER_CHECK")
+                    _logger.Debug($"[MISSING_VALUE:'raidId'] {action}|{payloadStr}");
                 return;
             }
 

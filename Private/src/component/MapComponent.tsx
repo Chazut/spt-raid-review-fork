@@ -18,6 +18,119 @@ import { PlayerSlider } from './MapPlayerSlider.js';
 import BotMapping from '../assets/botMapping.json'
 
 import 'leaflet/dist/leaflet.css';
+
+const BOSS_NAME_OVERRIDES: Record<string, string> = {
+    'Партизан': 'Partizan',
+}
+
+function getDisplayName(player: any): string {
+    return BOSS_NAME_OVERRIDES[player?.name] || player?.name || 'Unknown'
+}
+
+function classifyPlayer(player: any): string {
+    if (!player) return 'SCAV'
+    const isPMC = player.team === 'Bear' || player.team === 'Usec'
+    const isHuman = player.type === 'HUMAN'
+    if (isPMC || isHuman) return 'PMC'
+
+    let botMapping = BotMapping[player.type]
+    if (player.name === 'Knight') botMapping = { type: 'GOON' }
+    if (!botMapping) botMapping = { type: 'UNKNOWN' }
+
+    switch (botMapping.type) {
+        case 'PLAYER_SCAV': return 'PLAYER_SCAV'
+        case 'BOSS': return 'BOSS'
+        case 'GOON': return 'GOON'
+        case 'FOLLOWER': return 'FOLLOWER'
+        case 'RAIDER':
+        case 'ROGUE':
+        case 'CULT':
+        case 'BLOODHOUND':
+        case 'SNIPER': return 'SPECIAL'
+        case 'MERCENARY':
+        case 'RUAF':
+        case 'UNTAR':
+        case 'BLACKDIV': return 'FACTION'
+        case 'SCAV':
+        default:
+            if (player.type === 'PLAYER' && player.team === 'Savage') return 'SCAV'
+            return 'SCAV'
+    }
+}
+
+const LEGEND_GROUPS = [
+    { key: 'PMC', label: 'PMC' },
+    { key: 'PLAYER_SCAV', label: 'Player Scav' },
+    { key: 'BOSS', label: 'Boss' },
+    { key: 'GOON', label: 'Goons' },
+    { key: 'FOLLOWER', label: 'Followers' },
+    { key: 'SPECIAL', label: 'Special' },
+    { key: 'FACTION', label: 'Faction' },
+    { key: 'SCAV', label: 'Scav' },
+] as const
+
+function getMarkerLabel(player: any): string | null {
+    const type = (player?.type || '').toUpperCase()
+
+    // Bosses
+    if (type.includes('KILLA')) return 'Ki'
+    if (type.includes('RASHALA')) return 'Ra'
+    if (type.includes('SHTURMAN')) return 'Sh'
+    if (type.includes('TAGILLA')) return 'Ta'
+    if (type.includes('SANITAR')) return 'Sa'
+    if (type.includes('GLUHAR')) return 'Gl'
+    if (type.includes('ZRYACHIY')) return 'Zr'
+    if (type.includes('KABAN')) return 'Kb'
+    if (type.includes('KOLONTAY')) return 'Ko'
+    if (type.includes('PARTIZAN')) return 'P'
+
+    // Goons
+    if (type.includes('KNIGHT')) return 'Kn'
+    if (type.includes('BIGPIPE')) return 'BP'
+    if (type.includes('BIRDEYE')) return 'BE'
+
+    // Factions
+    if (type.includes('MERCENARY')) return 'M'
+    if (type.includes('RUAF')) return 'R'
+    if (type.includes('UNTAR')) return 'U'
+    if (type.includes('BLACK DIV')) return 'BD'
+
+    // Special types
+    if (type.includes('RAIDER')) return 'Rd'
+    if (type.includes('ROGUE')) return 'Rg'
+    if (type.includes('CULTIST PRIEST')) return 'CP'
+    if (type.includes('CULTIST')) return 'Cu'
+    if (type.includes('BLOODHOUND')) return 'Bh'
+    if (type.includes('BTR')) return 'BT'
+    if (type.includes('SNIPER')) return 'Sn'
+
+    return null
+}
+
+function createPlayerMarker(latlng: any, color: string, player: any, proportionalScale: number, opacity: number = 1, pmcIndex?: number): L.Layer {
+    const label = getMarkerLabel(player)
+    if (label) {
+        const icon = L.divIcon({
+            className: 'special-bot-marker',
+            html: `<div class="bot-marker-dot" style="background-color: ${color}; opacity: ${opacity};">${label}</div>`,
+            iconSize: [18, 18],
+            iconAnchor: [9, 9],
+        })
+        return L.marker(latlng, { icon, interactive: true })
+    }
+    // PMCs and player scavs get white border + number label
+    if (pmcIndex !== undefined) {
+        const icon = L.divIcon({
+            className: 'special-bot-marker',
+            html: `<div class="bot-marker-dot bot-marker-round" style="background-color: ${color}; opacity: ${opacity};">${pmcIndex}</div>`,
+            iconSize: [18, 18],
+            iconAnchor: [9, 9],
+        })
+        return L.marker(latlng, { icon, interactive: true })
+    }
+    // Scavs: plain circle, no border
+    return L.circle(latlng, { radius: proportionalScale, color, fillOpacity: opacity, fillRule: 'nonzero', opacity })
+}
 import '../modules/leaflet-heat.js'
 import './Map.css'
 
@@ -180,7 +293,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     const [followPlayerZoomed, setFollowPlayerZoomed] = useState(false)
     const [calculatedPlayerInfo, setCalculatedPlayerInfo] = useState({})
     const [calculatedLayerInfo, setCalculatedLayerInfo] = useState({})
-    const [playerFocus, setPlayerFocus] = useState(null)
+    const [playerFocus, setPlayerFocus] = useState<string | null>(null)
+    const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set(['SCAV']))
     const [proportionalScale, setProportionalScale] = useState(0)
     const [MAP, SET_MAP] = useState(null)
     const [mapHeight, setMapHeight] = useState(600)
@@ -202,6 +316,23 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
 
     // Events
     const [events, setEvents] = useState([])
+
+    // Pre-compute PMC index within each team group (for numbered markers in legend + map)
+    const pmcIndexMap = useMemo(() => {
+        const map: Record<string, number> = {}
+        const groupCounters: Record<number, number> = {}
+        for (const p of raidData.players) {
+            const isPMC = p.team === 'Usec' || p.team === 'Bear'
+            const isHuman = p.type === 'HUMAN'
+            if (isPMC || isHuman) {
+                const group = p.group ?? 0
+                if (groupCounters[group] === undefined) groupCounters[group] = 0
+                groupCounters[group]++
+                map[p.profileId] = groupCounters[group]
+            }
+        }
+        return map
+    }, [raidData.players])
 
     const focusItem = useRef(searchParams.get('q') ? searchParams.get('q').split(',') : [])
     const mapViewRef = useRef({})
@@ -512,6 +643,9 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
 
         clearMap(MAP, { start: timeStartLimit, end: timeEndLimit })
 
+        // Two-pass rendering: polylines first, then markers (so dots are always on top)
+        const deferredMarkers: { layer: L.Layer, playerId: string, followAction?: boolean }[] = []
+
         const playerPositionKeys = Object.keys(positions)
         for (let i = 0; i < playerPositionKeys.length; i++) {
             if (MAP === undefined) continue
@@ -541,7 +675,6 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             }
 
             const index = calculatedPlayerInfo[playerId]?.index || raidData.players.findIndex((p) => p.profileId === playerId)
-            // if (!index) continue;
             const player = calculatedPlayerInfo[playerId]?.player || raidData.players[index]
             const pickedColor = calculatedPlayerInfo[playerId]?.pickedColor || getPlayerColor(player, index)
             if (calculatedPlayerInfo[playerId] === undefined) {
@@ -555,7 +688,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 let endOfLine = cleanPositions[cleanPositions.length - 1]
 
                 // Focused Player
-                if (playerFocus !== null && playerFocus === i) {
+                if (playerFocus !== null && playerFocus === playerId) {
 
                     if (!MAP) return
                     L.polyline(cleanPositions, { color: pickedColor, weight: 4, opacity: 1 })
@@ -564,12 +697,12 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                             setFollowPlayer(playerId)
                             setFollowPlayerZoomed(false)
                         })
-                    L.circle(endOfLine, { radius: proportionalScale, color: pickedColor, fillOpacity: 1, fillRule: 'nonzero' })
-                        .addTo(MAP)
+                    const marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, 1, pmcIndexMap[playerId])
                         .on('click', () => {
                             setFollowPlayer(playerId)
                             setFollowPlayerZoomed(false)
                         })
+                    deferredMarkers.push({ layer: marker, playerId })
                 } else {
                     let focusedOpacityPolyLine = preserveHistory ? 0.1 : isPlayerDead ? 0 : 0.1
                     let focusedOpacityCircle = isPlayerDead ? 0 : 0.1
@@ -582,10 +715,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                             setFollowPlayerZoomed(false)
                         })
                     if (!isPlayerDead) {
-                        L.circle(endOfLine, { radius: proportionalScale, color: pickedColor, opacity: focusedOpacityCircle, fillOpacity: 1, fillRule: 'nonzero' }).addTo(MAP)
-                        if (followPlayer === playerId) {
-                            MAP.panTo(endOfLine, 4)
-                        }
+                        deferredMarkers.push({ layer: createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, focusedOpacityCircle, pmcIndexMap[playerId]), playerId, followAction: followPlayer === playerId })
                     }
                 }
 
@@ -599,10 +729,9 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                             setFollowPlayerZoomed(false)
                         })
                     if (!isPlayerDead) {
-                        L.circle(endOfLine, { radius: proportionalScale, color: pickedColor, fillOpacity: 1, fillRule: 'nonzero' }).addTo(MAP)
+                        deferredMarkers.push({ layer: createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, 1, pmcIndexMap[playerId]), playerId })
                         if (followPlayer === playerId) {
                             if (!followPlayerZoomed) {
-                                // This is here to make sure the user can adjust zoom as a player is followed
                                 MAP.setZoom(3)
                                 setFollowPlayerZoomed(true)
                             }
@@ -610,6 +739,14 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                         }
                     }
                 }
+            }
+        }
+
+        // Second pass: add all markers on top of polylines
+        for (const { layer, playerId, followAction } of deferredMarkers) {
+            layer.addTo(MAP)
+            if (followAction) {
+                MAP.panTo((layer as any).getLatLng?.() || (layer as any)._latlng, 4)
             }
         }
 
@@ -623,7 +760,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             setTimeEndLimit(times[times.length - 1])
             setTimeCurrentIndex(times.length - 1)
         }
-    }, [mapIsReady, mapViewRef, timeEndLimit, timeStartLimit, timeCurrentIndex, MAP, preserveHistory, events, hideEvents, hidePlayers, followPlayer, playerFocus])
+    }, [mapIsReady, mapViewRef, timeEndLimit, timeStartLimit, timeCurrentIndex, MAP, preserveHistory, events, hideEvents, hidePlayers, followPlayer, playerFocus, pmcIndexMap])
 
     // Slider Time Update
     useEffect(() => {
@@ -811,8 +948,9 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         for (const key in m._layers) {
             const layer = m._layers[key];
         
-            // Remove polylines without eventType or not being ballisticsLine, and circles
-            if ((layer instanceof L.Polyline && (!layer.eventType || layer.eventType !== 'ballisticsLine')) || layer instanceof L.Circle) {
+            // Remove polylines without eventType or not being ballisticsLine, circles, and special bot markers
+            const isSpecialBotMarker = layer instanceof L.Marker && layer.options?.icon?.options?.className === 'special-bot-marker';
+            if ((layer instanceof L.Polyline && (!layer.eventType || layer.eventType !== 'ballisticsLine')) || layer instanceof L.Circle || isSpecialBotMarker) {
                 m.removeLayer(layer);
                 continue;
             }
@@ -955,9 +1093,17 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 return '#6f00ff' // Dark Purple - Cultist
             case 'OTHER':
                 return '#00eeff' // Other - Cyan
+            case 'MERCENARY':
+                return '#FFD700' // Gold - Mercenary
+            case 'RUAF':
+                return '#4A90D9' // Steel Blue - RUAF
+            case 'UNTAR':
+                return '#00BFFF' // Light Blue - UNTAR
+            case 'BLACKDIV':
+                return '#555555' // Dark Grey - Black Division
             default:
                 if (player.type === 'PLAYER' && player.team === 'Savage') return '#33FF57' // Green - Scav
-                else return colors[index % colors.length] // PMC
+                else return colors[(player.group ?? index) % colors.length] // PMC - color by team group
         }
     }
 
@@ -998,32 +1144,189 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 <aside className="sidebar border border-eft mr-3 p-3 overflow-x-auto">
                     <div className="playerfeed text-eft">
                         <strong>Legend</strong>
-                        <ul>
-                            {raidData.players
-                                .filter((p) => p.spawnTime < timeEndLimit)
-                                .map((player, index) => (
-                                    <li
-                                        className="flex items-center justify-between player-legend-item px-2"
-                                        key={player.profileId}
-                                        onMouseEnter={() => setPlayerFocus(index)}
-                                        onMouseLeave={() => setPlayerFocus(null)}
-                                        onClick={() => {
-                                            setFollowPlayer(followPlayer === player.profileId ? null : player.profileId)
-                                            setFollowPlayerZoomed(false)
-                                        }}
-                                    >
-                                        <div className={`flex flex-row items-center ${playerIsDead(player.profileId, timeEndLimit) ? 'line-through opacity-25' : ''}`}>
-                                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', marginRight: '8px', background: getPlayerColor(player, index) }}></span>
-                                            <div>
-                                                <span className="capitalize">
-                                                    {intl(player.name, intl_dir)} ({getPlayerDifficultyAndBrain(player)})
-                                                </span>
+                        {(() => {
+                            const visiblePlayers = raidData.players.filter((p) => p.spawnTime < timeEndLimit)
+                            const grouped: Record<string, { player: any, originalIndex: number }[]> = {}
+                            visiblePlayers.forEach((player) => {
+                                const cat = classifyPlayer(player)
+                                const origIdx = raidData.players.indexOf(player)
+                                if (!grouped[cat]) grouped[cat] = []
+                                grouped[cat].push({ player, originalIndex: origIdx })
+                            })
+
+                            const toggleGroup = (key: string) => {
+                                setCollapsedGroups(prev => {
+                                    const next = new Set(prev)
+                                    if (next.has(key)) next.delete(key)
+                                    else next.add(key)
+                                    return next
+                                })
+                            }
+
+                            return LEGEND_GROUPS.filter(g => grouped[g.key]?.length > 0).map(group => {
+                                const items = grouped[group.key]
+                                const isCollapsed = collapsedGroups.has(group.key)
+
+                                // PMC sub-grouping by team
+                                if (group.key === 'PMC') {
+                                    const teams: Record<number, { player: any, originalIndex: number }[]> = {}
+                                    items.forEach(item => {
+                                        const g = item.player.group ?? 0
+                                        if (!teams[g]) teams[g] = []
+                                        teams[g].push(item)
+                                    })
+                                    const teamKeys = Object.keys(teams).map(Number).sort((a, b) => a - b)
+
+                                    return (
+                                        <div key={group.key}>
+                                            <div
+                                                className="flex items-center cursor-pointer py-1 mt-2"
+                                                style={{ borderBottom: '1px solid rgba(154, 136, 102, 0.3)', fontSize: '12px' }}
+                                                onClick={() => toggleGroup(group.key)}
+                                            >
+                                                <span style={{ marginRight: '4px', fontSize: '8px' }}>{isCollapsed ? '\u25B6' : '\u25BC'}</span>
+                                                <span>{group.label} ({items.length})</span>
                                             </div>
+                                            {!isCollapsed && teamKeys.map(teamKey => {
+                                                const teamPlayers = teams[teamKey]
+                                                const teamColor = getPlayerColor(teamPlayers[0].player, teamPlayers[0].originalIndex)
+                                                return (
+                                                    <div key={teamKey}>
+                                                        <div className="text-xs pl-2 pt-1" style={{ color: teamColor, opacity: 0.8 }}>
+                                                            Team {teamKey}
+                                                        </div>
+                                                        <ul>
+                                                            {teamPlayers.map(({ player, originalIndex }) => (
+                                                                <li
+                                                                    className="flex items-center justify-between player-legend-item px-2"
+                                                                    key={player.profileId}
+                                                                    onMouseEnter={() => setPlayerFocus(player.profileId)}
+                                                                    onMouseLeave={() => setPlayerFocus(null)}
+                                                                    onClick={() => {
+                                                                        setFollowPlayer(followPlayer === player.profileId ? null : player.profileId)
+                                                                        setFollowPlayerZoomed(false)
+                                                                    }}
+                                                                >
+                                                                    <div className={`flex flex-row items-center ${playerIsDead(player.profileId, timeEndLimit) ? 'line-through opacity-25' : ''}`}>
+                                                                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', marginRight: '8px', background: getPlayerColor(player, originalIndex) }}></span>
+                                                                        <div>
+                                                                            <span className="capitalize">
+                                                                                {pmcIndexMap[player.profileId] ? `${pmcIndexMap[player.profileId]}. ` : ''}{intl(getDisplayName(player), intl_dir)} ({getPlayerDifficultyAndBrain(player)})
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                    {followPlayer === player.profileId ? <span className="text-xs">[FOLLOWING]</span> : ''}
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )
+                                            })}
                                         </div>
-                                        {followPlayer === player.profileId ? <span className="text-xs">[FOLLOWING]</span> : ''}
-                                    </li>
-                                ))}
-                        </ul>
+                                    )
+                                }
+
+                                // Faction sub-grouping by faction type
+                                if (group.key === 'FACTION') {
+                                    const FACTION_LABELS: Record<string, string> = { MERCENARY: 'Mercenary', RUAF: 'RUAF', UNTAR: 'UNTAR', BLACKDIV: 'Black Div' }
+                                    const factions: Record<string, { player: any, originalIndex: number }[]> = {}
+                                    items.forEach(item => {
+                                        const fType = BotMapping[item.player.type]?.type || 'UNKNOWN'
+                                        if (!factions[fType]) factions[fType] = []
+                                        factions[fType].push(item)
+                                    })
+                                    const factionKeys = Object.keys(factions)
+
+                                    return (
+                                        <div key={group.key}>
+                                            <div
+                                                className="flex items-center cursor-pointer py-1 mt-2"
+                                                style={{ borderBottom: '1px solid rgba(154, 136, 102, 0.3)', fontSize: '12px' }}
+                                                onClick={() => toggleGroup(group.key)}
+                                            >
+                                                <span style={{ marginRight: '4px', fontSize: '8px' }}>{isCollapsed ? '\u25B6' : '\u25BC'}</span>
+                                                <span>{group.label} ({items.length})</span>
+                                            </div>
+                                            {!isCollapsed && factionKeys.map(fKey => {
+                                                const fPlayers = factions[fKey]
+                                                const fColor = getPlayerColor(fPlayers[0].player, fPlayers[0].originalIndex)
+                                                return (
+                                                    <div key={fKey}>
+                                                        <div className="text-xs pl-2 pt-1" style={{ color: fColor, opacity: 0.8 }}>
+                                                            {FACTION_LABELS[fKey] || fKey}
+                                                        </div>
+                                                        <ul>
+                                                            {fPlayers.map(({ player, originalIndex }) => (
+                                                                <li
+                                                                    className="flex items-center justify-between player-legend-item px-2"
+                                                                    key={player.profileId}
+                                                                    onMouseEnter={() => setPlayerFocus(player.profileId)}
+                                                                    onMouseLeave={() => setPlayerFocus(null)}
+                                                                    onClick={() => {
+                                                                        setFollowPlayer(followPlayer === player.profileId ? null : player.profileId)
+                                                                        setFollowPlayerZoomed(false)
+                                                                    }}
+                                                                >
+                                                                    <div className={`flex flex-row items-center ${playerIsDead(player.profileId, timeEndLimit) ? 'line-through opacity-25' : ''}`}>
+                                                                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', marginRight: '8px', background: getPlayerColor(player, originalIndex) }}></span>
+                                                                        <div>
+                                                                            <span className="capitalize">
+                                                                                {intl(getDisplayName(player), intl_dir)} ({getPlayerDifficultyAndBrain(player)})
+                                                                            </span>
+                                                                        </div>
+                                                                    </div>
+                                                                    {followPlayer === player.profileId ? <span className="text-xs">[FOLLOWING]</span> : ''}
+                                                                </li>
+                                                            ))}
+                                                        </ul>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    )
+                                }
+
+                                // Standard group
+                                return (
+                                    <div key={group.key}>
+                                        <div
+                                            className="flex items-center cursor-pointer py-1 mt-2"
+                                            style={{ borderBottom: '1px solid rgba(154, 136, 102, 0.3)', fontSize: '12px' }}
+                                            onClick={() => toggleGroup(group.key)}
+                                        >
+                                            <span style={{ marginRight: '4px', fontSize: '8px' }}>{isCollapsed ? '\u25B6' : '\u25BC'}</span>
+                                            <span>{group.label} ({items.length})</span>
+                                        </div>
+                                        {!isCollapsed && (
+                                            <ul>
+                                                {items.map(({ player, originalIndex }) => (
+                                                    <li
+                                                        className="flex items-center justify-between player-legend-item px-2"
+                                                        key={player.profileId}
+                                                        onMouseEnter={() => setPlayerFocus(player.profileId)}
+                                                        onMouseLeave={() => setPlayerFocus(null)}
+                                                        onClick={() => {
+                                                            setFollowPlayer(followPlayer === player.profileId ? null : player.profileId)
+                                                            setFollowPlayerZoomed(false)
+                                                        }}
+                                                    >
+                                                        <div className={`flex flex-row items-center ${playerIsDead(player.profileId, timeEndLimit) ? 'line-through opacity-25' : ''}`}>
+                                                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', marginRight: '8px', background: getPlayerColor(player, originalIndex) }}></span>
+                                                            <div>
+                                                                <span className="capitalize">
+                                                                    {intl(getDisplayName(player), intl_dir)} ({getPlayerDifficultyAndBrain(player)})
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                        {followPlayer === player.profileId ? <span className="text-xs">[FOLLOWING]</span> : ''}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                    </div>
+                                )
+                            })
+                        })()}
                     </div>
                 </aside>
                 <div className="map-wrapper border border-eft map">
