@@ -58,6 +58,20 @@ function classifyPlayer(player: any): string {
     }
 }
 
+function getLegendIcon(player: any, color: string, pmcIdx?: number): JSX.Element {
+    const label = getMarkerLabel(player)
+    if (label) {
+        // Square marker with letter — matches map
+        return <span style={{ width: '18px', height: '18px', borderRadius: '2px', marginRight: '6px', background: color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 'bold', color: '#fff', textShadow: '0 0 2px rgba(0,0,0,0.9)', border: '1px solid rgba(255,255,255,0.6)', flexShrink: 0, lineHeight: 1 }}>{label}</span>
+    }
+    if (pmcIdx !== undefined) {
+        // Round marker with number — matches map
+        return <span style={{ width: '18px', height: '18px', borderRadius: '50%', marginRight: '6px', background: color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 'bold', color: '#fff', textShadow: '0 0 2px rgba(0,0,0,0.9)', border: '1px solid rgba(255,255,255,0.6)', flexShrink: 0, lineHeight: 1 }}>{pmcIdx}</span>
+    }
+    // Plain circle for scavs
+    return <span style={{ width: '10px', height: '10px', minWidth: '10px', minHeight: '10px', borderRadius: '50%', marginRight: '6px', background: color, border: '1px solid rgba(255,255,255,0.4)', flexShrink: 0, display: 'inline-block' }}></span>
+}
+
 const LEGEND_GROUPS = [
     { key: 'PMC', label: 'PMC' },
     { key: 'PLAYER_SCAV', label: 'Player Scav' },
@@ -107,7 +121,9 @@ function getMarkerLabel(player: any): string | null {
     return null
 }
 
-function createPlayerMarker(latlng: any, color: string, player: any, proportionalScale: number, opacity: number = 1, pmcIndex?: number): L.Layer {
+function createPlayerMarker(latlng: any, color: string, player: any, proportionalScale: number, opacity: number = 1, pmcIndex?: number, tooltipText?: string): L.Layer {
+    const displayName = tooltipText || getDisplayName(player)
+    const tooltipOpts: L.TooltipOptions = { direction: 'top', offset: [0, -10], className: 'player-tooltip' }
     const label = getMarkerLabel(player)
     if (label) {
         const icon = L.divIcon({
@@ -116,7 +132,7 @@ function createPlayerMarker(latlng: any, color: string, player: any, proportiona
             iconSize: [18, 18],
             iconAnchor: [9, 9],
         })
-        return L.marker(latlng, { icon, interactive: true })
+        return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, tooltipOpts)
     }
     // PMCs and player scavs get white border + number label
     if (pmcIndex !== undefined) {
@@ -126,10 +142,10 @@ function createPlayerMarker(latlng: any, color: string, player: any, proportiona
             iconSize: [18, 18],
             iconAnchor: [9, 9],
         })
-        return L.marker(latlng, { icon, interactive: true })
+        return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, tooltipOpts)
     }
     // Scavs: plain circle, no border
-    return L.circle(latlng, { radius: proportionalScale, color, fillOpacity: opacity, fillRule: 'nonzero', opacity })
+    return L.circle(latlng, { radius: proportionalScale, color, fillOpacity: opacity, fillRule: 'nonzero', opacity }).bindTooltip(displayName, tooltipOpts)
 }
 import '../modules/leaflet-heat.js'
 import './Map.css'
@@ -697,7 +713,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                             setFollowPlayer(playerId)
                             setFollowPlayerZoomed(false)
                         })
-                    const marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, 1, pmcIndexMap[playerId])
+                    const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})`
+                    const marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, 1, pmcIndexMap[playerId], tip)
                         .on('click', () => {
                             setFollowPlayer(playerId)
                             setFollowPlayerZoomed(false)
@@ -715,7 +732,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                             setFollowPlayerZoomed(false)
                         })
                     if (!isPlayerDead) {
-                        deferredMarkers.push({ layer: createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, focusedOpacityCircle, pmcIndexMap[playerId]), playerId, followAction: followPlayer === playerId })
+                        const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})`
+                        deferredMarkers.push({ layer: createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, focusedOpacityCircle, pmcIndexMap[playerId], tip), playerId, followAction: followPlayer === playerId })
                     }
                 }
 
@@ -729,7 +747,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                             setFollowPlayerZoomed(false)
                         })
                     if (!isPlayerDead) {
-                        deferredMarkers.push({ layer: createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, 1, pmcIndexMap[playerId]), playerId })
+                        const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})`
+                        deferredMarkers.push({ layer: createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, 1, pmcIndexMap[playerId], tip), playerId })
                         if (followPlayer === playerId) {
                             if (!followPlayerZoomed) {
                                 MAP.setZoom(3)
@@ -1208,10 +1227,10 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                                     }}
                                                                 >
                                                                     <div className={`flex flex-row items-center ${playerIsDead(player.profileId, timeEndLimit) ? 'line-through opacity-25' : ''}`}>
-                                                                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', marginRight: '8px', background: getPlayerColor(player, originalIndex) }}></span>
+                                                                        {getLegendIcon(player, getPlayerColor(player, originalIndex), pmcIndexMap[player.profileId])}
                                                                         <div>
                                                                             <span className="capitalize">
-                                                                                {pmcIndexMap[player.profileId] ? `${pmcIndexMap[player.profileId]}. ` : ''}{intl(getDisplayName(player), intl_dir)} ({getPlayerDifficultyAndBrain(player)})
+                                                                                {intl(getDisplayName(player), intl_dir)} ({getPlayerDifficultyAndBrain(player)})
                                                                             </span>
                                                                         </div>
                                                                     </div>
@@ -1268,7 +1287,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                                     }}
                                                                 >
                                                                     <div className={`flex flex-row items-center ${playerIsDead(player.profileId, timeEndLimit) ? 'line-through opacity-25' : ''}`}>
-                                                                        <span style={{ width: '8px', height: '8px', borderRadius: '50%', marginRight: '8px', background: getPlayerColor(player, originalIndex) }}></span>
+                                                                        {getLegendIcon(player, getPlayerColor(player, originalIndex))}
                                                                         <div>
                                                                             <span className="capitalize">
                                                                                 {intl(getDisplayName(player), intl_dir)} ({getPlayerDifficultyAndBrain(player)})
@@ -1311,7 +1330,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                         }}
                                                     >
                                                         <div className={`flex flex-row items-center ${playerIsDead(player.profileId, timeEndLimit) ? 'line-through opacity-25' : ''}`}>
-                                                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', marginRight: '8px', background: getPlayerColor(player, originalIndex) }}></span>
+                                                            {getLegendIcon(player, getPlayerColor(player, originalIndex))}
                                                             <div>
                                                                 <span className="capitalize">
                                                                     {intl(getDisplayName(player), intl_dir)} ({getPlayerDifficultyAndBrain(player)})
@@ -1364,7 +1383,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                         >
                                             VIEW
                                         </a>
-                                        ] <strong>{e.profileNickname}</strong> killed <strong>{e.killedNickname}</strong> ({intl([e.weapon.replace('Name', 'ShortName')], intl_dir)} - {e.distance.toFixed(0)}m)
+                                        ] {(() => { const p = raidData.players.find(p => p.profileId === e.profileId); const idx = p ? raidData.players.indexOf(p) : 0; return p ? getLegendIcon(p, getPlayerColor(p, idx), pmcIndexMap[p.profileId]) : null })()}<strong>{e.profileNickname}</strong> killed {(() => { const p = raidData.players.find(p => p.profileId === e.killedId); const idx = p ? raidData.players.indexOf(p) : 0; return p ? getLegendIcon(p, getPlayerColor(p, idx), pmcIndexMap[p.profileId]) : null })()}<strong>{e.killedNickname}</strong> ({intl([e.weapon.replace('Name', 'ShortName')], intl_dir)} - {e.distance.toFixed(0)}m)
                                     </span>
                                 </div>
                             ))}
