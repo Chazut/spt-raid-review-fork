@@ -21,7 +21,7 @@ using EFT.HealthSystem;
 
 namespace RAID_REVIEW
 {
-    [BepInPlugin("ekky.raidreview", "Raid Review", "0.4.0")]
+    [BepInPlugin("ekky.raidreview", "Raid Review", "0.5.0")]
     [BepInDependency("me.sol.sain", BepInDependency.DependencyFlags.SoftDependency)]
     public class RAID_REVIEW : BaseUnityPlugin
     {
@@ -60,6 +60,75 @@ namespace RAID_REVIEW
         public static ConfigEntry<bool> ServerTLS;
         public static GameObject Hook;
 
+        /// <summary>
+        /// Maps a WildSpawnType to a Raid Review display string ("NAME|CATEGORY").
+        /// Used as a fallback when SAIN is not installed.
+        /// </summary>
+        public static string MapWildSpawnType(WildSpawnType role)
+        {
+            switch (role.ToString())
+            {
+                case "assault": return "SCAV|SCAV";
+                case "assaultGroup": return "SCAV GROUP|SCAV";
+                case "marksman": return "SCAV SNIPER|SNIPER";
+                case "cursedAssault": return "TAGGED AND CURSED SCAV|SCAV";
+                case "bossKnight": return "KNIGHT|GOON";
+                case "followerBigPipe": return "BIGPIPE|GOON";
+                case "followerBirdEye": return "BIRDEYE|GOON";
+                case "exUsec": return "ROGUE|FOLLOWER";
+                case "pmcBot": return "RAIDER|FOLLOWER";
+                case "arenaFighterEvent": return "BLOODHOUND|BLOODHOUND";
+                case "sectantPriest": return "CULTIST PRIEST|CULT";
+                case "sectantWarrior": return "CULTIST|CULT";
+                case "bossKilla": return "KILLA|BOSS";
+                case "bossBully": return "RASHALA|BOSS";
+                case "followerBully": return "RASHALA GUARD|FOLLOWER";
+                case "bossKojaniy": return "SHTURMAN|BOSS";
+                case "followerKojaniy": return "SHTURMAN GUARD|FOLLOWER";
+                case "bossTagilla": return "TAGILLA|BOSS";
+                case "followerTagilla": return "TAGILLA GUARD|FOLLOWER";
+                case "bossSanitar": return "SANITAR|BOSS";
+                case "followerSanitar": return "SANITAR GUARD|FOLLOWER";
+                case "bossGluhar": return "GLUHAR|BOSS";
+                case "followerGluharSnipe": return "GLUHAR GUARD SNIPE|FOLLOWER";
+                case "followerGluharScout": return "GLUHAR GUARD SCOUT|FOLLOWER";
+                case "followerGluharSecurity": return "GLUHAR GUARD SECURITY|FOLLOWER";
+                case "followerGluharAssault": return "GLUHAR GUARD ASSAULT|FOLLOWER";
+                case "bossZryachiy": return "ZRYACHIY|BOSS";
+                case "followerZryachiy": return "ZRYACHIY GUARD|FOLLOWER";
+                case "bossBoar": return "KABAN|BOSS";
+                case "followerBoar": return "KABAN GUARD|FOLLOWER";
+                case "bossBoarSniper": return "KABAN SNIPER|FOLLOWER";
+                case "bossKolontay": return "KOLONTAY|BOSS";
+                case "followerKolontayAssault": return "KOLONTAY ASSAULT|FOLLOWER";
+                case "followerKolontaySecurity": return "KOLONTAY SECURITY|FOLLOWER";
+                case "bossPartisan": return "PARTIZAN|BOSS";
+                case "shooterBTR": return "BTR|OTHER";
+                // PMC bots
+                case "pmcBEAR": return "PMC|BEAR";
+                case "pmcUSEC": return "PMC|USEC";
+                case "sptBear": return "PMC|BEAR";
+                case "sptUsec": return "PMC|USEC";
+                // Custom faction mods
+                case "mercenary": return "MERCENARY|MERCENARY";
+                case "ruafRifleman": return "RUAF RIFLEMAN|RUAF";
+                case "ruafRiflemanSenior": return "RUAF SENIOR RIFLEMAN|RUAF";
+                case "ruafAutorifleman": return "RUAF AUTORIFLEMAN|RUAF";
+                case "ruafGrenadier": return "RUAF GRENADIER|RUAF";
+                case "ruafMarksman": return "RUAF MARKSMAN|RUAF";
+                case "ruafMachinegunner": return "RUAF MACHINEGUNNER|RUAF";
+                case "followeruntar": return "UNTAR GUARD|UNTAR";
+                case "bossuntarlead": return "UNTAR SQUAD LEADER|UNTAR";
+                case "followeruntarmarksman": return "UNTAR MARKSMAN|UNTAR";
+                case "bossuntarofficer": return "UNTAR OFFICER|UNTAR";
+                case "blackDivLead": return "BLACK DIV LEAD|BLACKDIV";
+                case "blackDivAssault": return "BLACK DIV ASSAULT|BLACKDIV";
+                case "blackDivBreacher": return "BLACK DIV BREACHER|BLACKDIV";
+                case "blackDivSupport": return "BLACK DIV SUPPORT|BLACKDIV";
+                default: return role.ToString().ToUpper() + "|FACTION_MOD";
+            }
+        }
+
         // Other Mods
         public static bool MODS_SEARCHED = false;
         public static bool SOLARINT_SAIN__DETECTED { get; set; }
@@ -70,6 +139,27 @@ namespace RAID_REVIEW
         void Awake()
         {
             Logger.LogInfo("RAID_REVIEW :::: INFO :::: Mod Loaded");
+
+            // Clean up legacy versioned DLLs (e.g. RAID_REVIEW__0.4.0.dll) from older releases
+            try
+            {
+                var dllPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                var pluginDir = System.IO.Path.GetDirectoryName(dllPath);
+                Logger.LogInfo($"RAID_REVIEW :::: INFO :::: Plugin directory: {pluginDir}");
+                if (pluginDir != null)
+                {
+                    foreach (var old in System.IO.Directory.GetFiles(pluginDir, "RAID_REVIEW*.dll"))
+                    {
+                        if (string.Equals(old, dllPath, System.StringComparison.OrdinalIgnoreCase)) continue;
+                        Logger.LogInfo($"RAID_REVIEW :::: INFO :::: Removing legacy DLL: {System.IO.Path.GetFileName(old)}");
+                        System.IO.File.Delete(old);
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Logger.LogWarning($"RAID_REVIEW :::: WARN :::: Failed to clean up legacy DLLs: {ex.Message}");
+            }
 
             // Configuration Bindings
             LaunchWebpageKey = Config.Bind("Main", "Open Webpage Keybind", new KeyboardShortcut(KeyCode.F5), "Keybind to open the web client.");
@@ -184,6 +274,20 @@ namespace RAID_REVIEW
                             else if (player.Side == EPlayerSide.Usec || player.Side == EPlayerSide.Bear)
                             {
                                 trackingPlayer.mod_SAIN_brain = "PMC";
+                            }
+
+                            // Read WildSpawnType directly for bot type detection
+                            // Must run for all AI (including Savage side) to detect bosses like Partizan
+                            if (player.IsAI)
+                            {
+                                try
+                                {
+                                    var role = player.Profile.Info.Settings.Role;
+                                    trackingPlayer.type = MapWildSpawnType(role);
+                                    // Override cyrillic names for known bosses
+                                    if (role.ToString() == "bossPartisan") trackingPlayer.name = "Partizan";
+                                }
+                                catch { }
                             }
 
                             trackingPlayers[trackingPlayer.profileId] = trackingPlayer;

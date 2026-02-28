@@ -124,6 +124,92 @@ public class DatabaseService : IDisposable
                     FOREIGN KEY (""raidId"") REFERENCES raid(""id"")
                 );
             "),
+            ("fix_foreign_keys", @"
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_raid_raidId ON raid(""raidId"");
+
+                CREATE TABLE player_new (
+                    ""id"" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ""raidId"" TEXT NOT NULL,
+                    ""profileId"" TEXT NOT NULL,
+                    ""level"" INTEGER NOT NULL,
+                    ""team"" TEXT NOT NULL,
+                    ""name"" TEXT NOT NULL,
+                    ""group"" INTEGER NOT NULL,
+                    ""spawnTime"" INTEGER NOT NULL,
+                    ""type"" TEXT NOT NULL DEFAULT 'BOT',
+                    ""mod_SAIN_brain"" TEXT NOT NULL DEFAULT 'UNKNOWN',
+                    ""mod_SAIN_difficulty"" TEXT NOT NULL DEFAULT '',
+                    ""created_at"" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (""raidId"") REFERENCES raid(""raidId"")
+                );
+                INSERT INTO player_new SELECT * FROM player;
+                DROP TABLE player;
+                ALTER TABLE player_new RENAME TO player;
+
+                CREATE TABLE kills_new (
+                    ""id"" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ""raidId"" TEXT NOT NULL,
+                    ""profileId"" TEXT NOT NULL,
+                    ""time"" INTEGER NOT NULL,
+                    ""killedId"" TEXT NOT NULL,
+                    ""weapon"" TEXT NOT NULL,
+                    ""distance"" TEXT NOT NULL,
+                    ""bodyPart"" TEXT NOT NULL,
+                    ""positionKilled"" TEXT NOT NULL,
+                    ""positionKiller"" TEXT NOT NULL,
+                    ""created_at"" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (""raidId"") REFERENCES raid(""raidId"")
+                );
+                INSERT INTO kills_new SELECT * FROM kills;
+                DROP TABLE kills;
+                ALTER TABLE kills_new RENAME TO kills;
+
+                CREATE TABLE looting_new (
+                    ""id"" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ""raidId"" TEXT NOT NULL,
+                    ""profileId"" TEXT NOT NULL,
+                    ""time"" TEXT NOT NULL,
+                    ""qty"" TEXT NOT NULL,
+                    ""itemId"" TEXT NOT NULL,
+                    ""itemName"" TEXT NOT NULL,
+                    ""added"" TEXT NOT NULL,
+                    ""created_at"" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (""raidId"") REFERENCES raid(""raidId"")
+                );
+                INSERT INTO looting_new SELECT * FROM looting;
+                DROP TABLE looting;
+                ALTER TABLE looting_new RENAME TO looting;
+
+                CREATE TABLE ballistic_new (
+                    ""id"" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ""raidId"" TEXT NOT NULL,
+                    ""time"" INTEGER NOT NULL,
+                    ""profileId"" TEXT NOT NULL,
+                    ""weaponId"" TEXT NOT NULL,
+                    ""ammoId"" TEXT NOT NULL,
+                    ""hitPlayerId"" TEXT,
+                    ""source"" TEXT NOT NULL,
+                    ""target"" TEXT NOT NULL,
+                    ""created_at"" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (""raidId"") REFERENCES raid(""raidId"")
+                );
+                INSERT INTO ballistic_new SELECT * FROM ballistic;
+                DROP TABLE ballistic;
+                ALTER TABLE ballistic_new RENAME TO ballistic;
+
+                CREATE TABLE player_status_new (
+                    ""id"" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ""raidId"" TEXT NOT NULL,
+                    ""profileId"" TEXT NOT NULL,
+                    ""time"" INTEGER NOT NULL,
+                    ""status"" TEXT NOT NULL,
+                    ""created_at"" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (""raidId"") REFERENCES raid(""raidId"")
+                );
+                INSERT INTO player_status_new SELECT * FROM player_status;
+                DROP TABLE player_status;
+                ALTER TABLE player_status_new RENAME TO player_status;
+            "),
         };
 
         foreach (var (name, sql) in migrations)

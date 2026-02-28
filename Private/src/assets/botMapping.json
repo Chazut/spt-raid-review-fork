@@ -147,6 +147,10 @@
         "name": "Kolontay Security",
         "type": "FOLLOWER"
     },
+    "PARTIZAN|BOSS": {
+        "name": "Partizan",
+        "type": "BOSS"
+    },
     "BTR|OTHER": {
         "name": "BTR",
         "type": "OTHER"
@@ -154,6 +158,66 @@
     "CUSTOM|BOSS": {
         "name": "Custom Boss",
         "type": "BOSS"
+    },
+    "MERCENARY|MERCENARY": {
+        "name": "Mercenary",
+        "type": "MERCENARY"
+    },
+    "RUAF RIFLEMAN|RUAF": {
+        "name": "RUAF Rifleman",
+        "type": "RUAF"
+    },
+    "RUAF SENIOR RIFLEMAN|RUAF": {
+        "name": "RUAF Sr. Rifleman",
+        "type": "RUAF"
+    },
+    "RUAF AUTORIFLEMAN|RUAF": {
+        "name": "RUAF Autorifleman",
+        "type": "RUAF"
+    },
+    "RUAF GRENADIER|RUAF": {
+        "name": "RUAF Grenadier",
+        "type": "RUAF"
+    },
+    "RUAF MARKSMAN|RUAF": {
+        "name": "RUAF Marksman",
+        "type": "RUAF"
+    },
+    "RUAF MACHINEGUNNER|RUAF": {
+        "name": "RUAF Machinegunner",
+        "type": "RUAF"
+    },
+    "UNTAR GUARD|UNTAR": {
+        "name": "UNTAR Guard",
+        "type": "UNTAR"
+    },
+    "UNTAR SQUAD LEADER|UNTAR": {
+        "name": "UNTAR Squad Leader",
+        "type": "UNTAR"
+    },
+    "UNTAR MARKSMAN|UNTAR": {
+        "name": "UNTAR Marksman",
+        "type": "UNTAR"
+    },
+    "UNTAR OFFICER|UNTAR": {
+        "name": "UNTAR Officer",
+        "type": "UNTAR"
+    },
+    "BLACK DIV LEAD|BLACKDIV": {
+        "name": "Black Div Lead",
+        "type": "BLACKDIV"
+    },
+    "BLACK DIV ASSAULT|BLACKDIV": {
+        "name": "Black Div Assault",
+        "type": "BLACKDIV"
+    },
+    "BLACK DIV BREACHER|BLACKDIV": {
+        "name": "Black Div Breacher",
+        "type": "BLACKDIV"
+    },
+    "BLACK DIV SUPPORT|BLACKDIV": {
+        "name": "Black Div Support",
+        "type": "BLACKDIV"
     },
     "UNKNOWN": {
         "name": "",

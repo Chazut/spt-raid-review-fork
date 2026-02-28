@@ -169,6 +169,43 @@
   transform: translate(-55%);
 }
 
+/* Special Bot Markers */
+.special-bot-marker {
+  background: transparent !important;
+  border: none !important;
+}
+.bot-marker-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: bold;
+  color: #fff;
+  text-shadow: 0 0 3px rgba(0, 0, 0, 0.9);
+  border: 1.5px solid rgba(255, 255, 255, 0.6);
+  line-height: 1;
+}
+.bot-marker-dot.bot-marker-round {
+  border-radius: 50%;
+}
+
+/* Player Tooltip */
+.player-tooltip {
+  background: rgba(0, 0, 0, 0.85);
+  border: 1px solid rgba(154, 136, 102, 0.6);
+  color: #d4c9a8;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+.player-tooltip.leaflet-tooltip-top::before {
+  border-top-color: rgba(154, 136, 102, 0.6);
+}
+
 /* Icons */
 .killer-icon,
 .death-icon {
