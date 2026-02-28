@@ -3,7 +3,7 @@ set -e
 
 # Configuration
 default_name="raid_review"
-default_version="0.4.0"
+default_version="0.5.0"
 current_dir=$(pwd)
 
 echo "Let's start the deployment process..."
@@ -40,7 +40,7 @@ cd "$current_dir"
 
 # 4. Package server mod
 echo ">> Packaging server mod..."
-server_dest="$dist_folder/user/mods/RaidReview"
+server_dest="$dist_folder/SPT/user/mods/RaidReview"
 mkdir -p "$server_dest"
 
 # Copy DLLs flat (must be next to RaidReview.dll — .NET resolves them before any mod code runs)
@@ -66,7 +66,7 @@ output_path=$(sed -n 's/.*<OutputPath>\(.*\)<\/OutputPath>.*/\1/p' Client/RAID-R
 if [ -z "$output_path" ]; then
     output_path="Client/bin/Release"
 fi
-for file in "$output_path"/RAID_REVIEW__*.dll; do
+for file in "$output_path"/RAID_REVIEW.dll; do
     if [ -f "$file" ]; then
         echo "  Copying $(basename "$file") from $output_path"
         cp "$file" "$client_dest/"

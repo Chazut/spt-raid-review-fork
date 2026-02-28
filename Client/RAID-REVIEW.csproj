@@ -2,12 +2,12 @@
 
 	<PropertyGroup>
 		<TargetFramework>net472</TargetFramework>
-		<AssemblyName>RAID_REVIEW__0.4.0</AssemblyName>
+		<AssemblyName>RAID_REVIEW</AssemblyName>
 		<AssemblyTitle>RAID_REVIEW</AssemblyTitle>
 		<AssemblyDescription>A post raid review tool for SPT</AssemblyDescription>
 		<AssemblyCompany>EkkyLLC</AssemblyCompany>
 		<AssemblyProduct>RAID_REVIEW</AssemblyProduct>
-		<AssemblyVersion>0.4.0</AssemblyVersion>
+		<AssemblyVersion>0.5.0</AssemblyVersion>
 		<Copyright>2024 © Ekky</Copyright>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 		<OutputPath>C:\Games\SPT-4.0\BepInEx\plugins\</OutputPath>

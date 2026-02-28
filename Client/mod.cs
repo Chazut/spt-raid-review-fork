@@ -21,7 +21,7 @@ using EFT.HealthSystem;
 
 namespace RAID_REVIEW
 {
-    [BepInPlugin("ekky.raidreview", "Raid Review", "0.4.0")]
+    [BepInPlugin("ekky.raidreview", "Raid Review", "0.5.0")]
     [BepInDependency("me.sol.sain", BepInDependency.DependencyFlags.SoftDependency)]
     public class RAID_REVIEW : BaseUnityPlugin
     {
@@ -139,6 +139,27 @@ namespace RAID_REVIEW
         void Awake()
         {
             Logger.LogInfo("RAID_REVIEW :::: INFO :::: Mod Loaded");
+
+            // Clean up legacy versioned DLLs (e.g. RAID_REVIEW__0.4.0.dll) from older releases
+            try
+            {
+                var dllPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                var pluginDir = System.IO.Path.GetDirectoryName(dllPath);
+                Logger.LogInfo($"RAID_REVIEW :::: INFO :::: Plugin directory: {pluginDir}");
+                if (pluginDir != null)
+                {
+                    foreach (var old in System.IO.Directory.GetFiles(pluginDir, "RAID_REVIEW*.dll"))
+                    {
+                        if (string.Equals(old, dllPath, System.StringComparison.OrdinalIgnoreCase)) continue;
+                        Logger.LogInfo($"RAID_REVIEW :::: INFO :::: Removing legacy DLL: {System.IO.Path.GetFileName(old)}");
+                        System.IO.File.Delete(old);
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Logger.LogWarning($"RAID_REVIEW :::: WARN :::: Failed to clean up legacy DLLs: {ex.Message}");
+            }
 
             // Configuration Bindings
             LaunchWebpageKey = Config.Bind("Main", "Open Webpage Keybind", new KeyboardShortcut(KeyCode.F5), "Keybind to open the web client.");
