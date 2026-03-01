@@ -104,6 +104,17 @@ namespace RAID_REVIEW
                 case "followerKolontaySecurity": return "KOLONTAY SECURITY|FOLLOWER";
                 case "bossPartisan": return "PARTIZAN|BOSS";
                 case "shooterBTR": return "BTR|OTHER";
+                // Labyrinth
+                case "bossTagillaAgro": return "SHADOW TAGILLA|BOSS";
+                case "bossKillaAgro": return "VENGEFUL KILLA|BOSS";
+                case "tagillaHelperAgro": return "SHADOW TAGILLA GUARD|FOLLOWER";
+                case "infectedAssault": return "INFECTED|INFECTED";
+                case "infectedPmc": return "INFECTED PMC|INFECTED";
+                case "infectedCivil": return "INFECTED CIVILIAN|INFECTED";
+                case "infectedLaborant": return "INFECTED LABORANT|INFECTED";
+                case "infectedTagilla": return "INFECTED TAGILLA|BOSS";
+                case "spiritWinter": return "SPIRIT WINTER|SPECIAL";
+                case "spiritSpring": return "SPIRIT SPRING|SPECIAL";
                 // PMC bots
                 case "pmcBEAR": return "PMC|BEAR";
                 case "pmcUSEC": return "PMC|USEC";

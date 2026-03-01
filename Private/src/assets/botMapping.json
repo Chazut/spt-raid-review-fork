@@ -155,6 +155,46 @@
         "name": "BTR",
         "type": "OTHER"
     },
+    "SHADOW TAGILLA|BOSS": {
+        "name": "Shadow of Tagilla",
+        "type": "BOSS"
+    },
+    "VENGEFUL KILLA|BOSS": {
+        "name": "Vengeful Killa",
+        "type": "BOSS"
+    },
+    "SHADOW TAGILLA GUARD|FOLLOWER": {
+        "name": "Shadow Tagilla Guard",
+        "type": "FOLLOWER"
+    },
+    "INFECTED|INFECTED": {
+        "name": "Infected",
+        "type": "INFECTED"
+    },
+    "INFECTED PMC|INFECTED": {
+        "name": "Infected PMC",
+        "type": "INFECTED"
+    },
+    "INFECTED CIVILIAN|INFECTED": {
+        "name": "Infected Civilian",
+        "type": "INFECTED"
+    },
+    "INFECTED LABORANT|INFECTED": {
+        "name": "Infected Laborant",
+        "type": "INFECTED"
+    },
+    "INFECTED TAGILLA|BOSS": {
+        "name": "Infected Tagilla",
+        "type": "BOSS"
+    },
+    "SPIRIT WINTER|SPECIAL": {
+        "name": "Spirit of Winter",
+        "type": "SPECIAL"
+    },
+    "SPIRIT SPRING|SPECIAL": {
+        "name": "Spirit of Spring",
+        "type": "SPECIAL"
+    },
     "CUSTOM|BOSS": {
         "name": "Custom Boss",
         "type": "BOSS"
