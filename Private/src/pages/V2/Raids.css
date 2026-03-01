@@ -65,6 +65,27 @@ tbody tr:nth-child(even) {
     background: rgba(154, 136, 102, 0.15) !important;
 }
 
+/* Kill highlight: row click interaction */
+#raid-leaderboard tbody tr {
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.leaderboard-selected {
+    outline: 1px solid #9a8866;
+    background: rgba(154, 136, 102, 0.18) !important;
+}
+
+.leaderboard-victim {
+    border-left: 3px solid #22C55E !important;
+    background: rgba(34, 197, 94, 0.08) !important;
+}
+
+.leaderboard-killer {
+    border-left: 3px solid #EF4444 !important;
+    background: rgba(239, 68, 68, 0.08) !important;
+}
+
 /* Sort header hover */
 #raid-leaderboard thead th.cursor-pointer:hover {
     background: rgba(0, 0, 0, 0.15);

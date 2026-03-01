@@ -60,6 +60,8 @@ export default function RaidOverview() {
     const [ groupedBy, setGroupedBy ] = useState([] as TrackingRaidDataPlayers[][]);
     const [ sortKey, setSortKey ] = useState<SortKey>(null);
     const [ sortDir, setSortDir ] = useState<SortDir>('desc');
+    const [ killedByMap, setKilledByMap ] = useState<Map<string, { killerName: string, weapon: string, distance: string, bodyPart: string }>>(new Map());
+    const [ selectedProfileId, setSelectedProfileId ] = useState<string | null>(null);
 
     const intl_dir : Record<string, string> = {...intl_dir_ot, ...cyr_to_en};
 
@@ -121,6 +123,23 @@ export default function RaidOverview() {
           })
         }
         setCalcStats(calculatedStats);
+
+        const nameMap = new Map<string, string>();
+        for (const p of raid.players) {
+          nameMap.set(p.profileId, p.name);
+        }
+        const newKilledByMap = new Map<string, { killerName: string, weapon: string, distance: string, bodyPart: string }>();
+        if (raid.kills) {
+          for (const kill of raid.kills) {
+            newKilledByMap.set(kill.killedId, {
+              killerName: nameMap.get(kill.profileId) || 'Unknown',
+              weapon: kill.weapon,
+              distance: kill.distance,
+              bodyPart: kill.bodyPart,
+            });
+          }
+        }
+        setKilledByMap(newKilledByMap);
 
         if (groupedByType === '') {
           setGroupedBy([[...raid.players]])
@@ -292,6 +311,13 @@ export default function RaidOverview() {
       function generatePlayerTable(raid: TrackingRaidData) {
         if (!raid || !groupedBy || groupedBy.length === 0) return null;
 
+        const victimIds = selectedProfileId
+          ? new Set(raid.kills?.filter(k => k.profileId === selectedProfileId).map(k => k.killedId))
+          : new Set<string>();
+        const killerOfSelected = selectedProfileId
+          ? raid.kills?.find(k => k.killedId === selectedProfileId)?.profileId
+          : null;
+
         return groupedBy.map((gp, groupIndex) => {
           const sorted = sortPlayers(gp);
           return sorted.map((p, index) => {
@@ -302,14 +328,23 @@ export default function RaidOverview() {
             const stats = calcStats?.get(p.profileId);
             const accuracy = stats?.accuracy || 0;
             const accuracyColor = accuracy >= 50 ? '#22C55E' : accuracy >= 20 ? '#EAB308' : '#EF4444';
+            const killInfo = isDead ? killedByMap.get(p.profileId) : null;
 
             const groupBorder = index === 0 ? 'border-t border-dashed border-eft' : index === sorted.length - 1 ? 'border-b border-dashed border-eft' : '';
             const groupTint = groupIndex % 2 === 1 ? 'leaderboard-group-alt' : '';
 
+            let highlightClass = '';
+            if (selectedProfileId) {
+              if (p.profileId === selectedProfileId) highlightClass = 'leaderboard-selected';
+              else if (victimIds.has(p.profileId)) highlightClass = 'leaderboard-victim';
+              else if (p.profileId === killerOfSelected) highlightClass = 'leaderboard-killer';
+            }
+
             return (
               <tr
                 key={`g${groupIndex}-${index}`}
-                className={`${isDead ? 'opacity-75' : ''} ${groupBorder} ${groupTint} ${isMainPlayer ? 'leaderboard-player-row font-bold' : ''}`}
+                className={`${isDead ? 'opacity-75' : ''} ${groupBorder} ${groupTint} ${isMainPlayer ? 'leaderboard-player-row font-bold' : ''} ${highlightClass}`}
+                onClick={() => setSelectedProfileId(prev => prev === p.profileId ? null : p.profileId)}
               >
                 <td className="text-center p-2">
                   <span
@@ -321,7 +356,14 @@ export default function RaidOverview() {
                 </td>
                 <td className="text-center p-2 uppercase border-x border-eft">{p.group}</td>
                 <td className="text-center p-2 border-x border-eft">{p.level}</td>
-                <td className="text-left p-2">{intl(BOSS_NAME_OVERRIDES[p.name] || p.name, intl_dir)}</td>
+                <td className="text-left p-2">
+                  <div>{intl(BOSS_NAME_OVERRIDES[p.name] || p.name, intl_dir)}</div>
+                  {killInfo && (
+                    <div className="text-xs opacity-50 mt-0.5">
+                      by {intl(BOSS_NAME_OVERRIDES[killInfo.killerName] || killInfo.killerName, intl_dir)} ({killInfo.weapon}, {Number(killInfo.distance).toFixed(0)}m, {killInfo.bodyPart})
+                    </div>
+                  )}
+                </td>
                 <td className="text-center p-2 border-x border-eft">
                   {isDead
                     ? <span className="text-red-500 font-semibold">KIA</span>
@@ -369,7 +411,7 @@ export default function RaidOverview() {
         <section className="mt-4">
             <div className="w-full flex flex-row justify-between items-center">
               <span className="text-lg font-bold">Leaderboard</span>
-              <span className="text-sm opacity-70">Group by Side, Team, or Spawned | Click Lvl, K, L, A% to sort</span>
+              <span className="text-sm opacity-70">Click row to show kills | Sort by Lvl, K, L, A%</span>
             </div>
             <table id="raid-leaderboard" className="mb-2 w-full border border-eft">
                 <thead>
