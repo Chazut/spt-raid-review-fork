@@ -418,6 +418,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             town: 'town',
             woods: 'woods',
             Woods: 'woods',
+            Labyrinth: 'the-labyrinth',
             base: 'base',
         }
 

@@ -87,5 +87,6 @@ export const mapIcons = {
     'reserve': '',
     'shoreline': '',
     'woods': '',
+    'the-labyrinth': '',
     'openworld': '',
 };
