@@ -47,7 +47,8 @@ function classifyPlayer(player: any): string {
         case 'CULT':
         case 'BLOODHOUND':
         case 'SNIPER':
-        case 'INFECTED': return 'SPECIAL'
+        case 'INFECTED':
+        case 'OTHER': return 'SPECIAL'
         case 'MERCENARY':
         case 'RUAF':
         case 'UNTAR':
@@ -61,6 +62,10 @@ function classifyPlayer(player: any): string {
 
 function getLegendIcon(player: any, color: string, pmcIdx?: number): JSX.Element {
     const label = getMarkerLabel(player)
+    if (label === 'BTR_ICON') {
+        // BTR vehicle icon
+        return <span style={{ width: '24px', height: '18px', marginRight: '4px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg viewBox="0 0 24 18" width="24" height="18" fill="none"><rect x="2" y="3" width="20" height="8" rx="1" fill={color}/><rect x="5" y="1" width="10" height="4" rx="1" fill={color}/><line x1="15" y1="3" x2="20" y2="5" stroke={color} strokeWidth="1.2"/><circle cx="5.5" cy="13.5" r="2.5" fill={color}/><circle cx="12" cy="13.5" r="2.5" fill={color}/><circle cx="18.5" cy="13.5" r="2.5" fill={color}/><circle cx="5.5" cy="13.5" r="1" fill="#1a1a1a"/><circle cx="12" cy="13.5" r="1" fill="#1a1a1a"/><circle cx="18.5" cy="13.5" r="1" fill="#1a1a1a"/></svg></span>
+    }
     if (label) {
         // Square marker with letter — matches map
         return <span style={{ width: '18px', height: '18px', borderRadius: '2px', marginRight: '6px', background: color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 'bold', color: '#fff', textShadow: '0 0 2px rgba(0,0,0,0.9)', border: '1px solid rgba(255,255,255,0.6)', flexShrink: 0, lineHeight: 1 }}>{label}</span>
@@ -122,7 +127,7 @@ function getMarkerLabel(player: any): string | null {
     if (type.includes('CULTIST PRIEST')) return 'CP'
     if (type.includes('CULTIST')) return 'Cu'
     if (type.includes('BLOODHOUND')) return 'Bh'
-    if (type.includes('BTR')) return 'BT'
+    if (type.includes('BTR')) return 'BTR_ICON'
     if (type.includes('SNIPER')) return 'Sn'
 
     return null
@@ -132,6 +137,16 @@ function createPlayerMarker(latlng: any, color: string, player: any, proportiona
     const displayName = tooltipText || getDisplayName(player)
     const tooltipOpts: L.TooltipOptions = { direction: 'top', offset: [0, -10], className: 'player-tooltip' }
     const label = getMarkerLabel(player)
+    if (label === 'BTR_ICON') {
+        const btrSvg = `<svg viewBox="0 0 24 18" width="24" height="18" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="3" width="20" height="8" rx="1" fill="${color}" opacity="${opacity}"/><rect x="5" y="1" width="10" height="4" rx="1" fill="${color}" opacity="${opacity}"/><line x1="15" y1="3" x2="20" y2="5" stroke="${color}" stroke-width="1.2" opacity="${opacity}"/><circle cx="5.5" cy="13.5" r="2.5" fill="${color}" opacity="${opacity}"/><circle cx="12" cy="13.5" r="2.5" fill="${color}" opacity="${opacity}"/><circle cx="18.5" cy="13.5" r="2.5" fill="${color}" opacity="${opacity}"/><circle cx="5.5" cy="13.5" r="1" fill="#1a1a1a"/><circle cx="12" cy="13.5" r="1" fill="#1a1a1a"/><circle cx="18.5" cy="13.5" r="1" fill="#1a1a1a"/></svg>`
+        const icon = L.divIcon({
+            className: 'special-bot-marker',
+            html: `<div style="display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 0 2px rgba(0,0,0,0.9));">${btrSvg}</div>`,
+            iconSize: [24, 20],
+            iconAnchor: [12, 10],
+        })
+        return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, tooltipOpts)
+    }
     if (label) {
         const icon = L.divIcon({
             className: 'special-bot-marker',
@@ -1069,6 +1084,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             if (botMapping.type === 'PLAYER_SCAV') brainOutput = `${player.mod_SAIN_brain.trim()} - Player Scav`
             if (botMapping.type === 'BLOODHOUND') brainOutput = `Bloodhound`
             if (botMapping.type === 'INFECTED') brainOutput = `Infected`
+            if (botMapping.type === 'OTHER') brainOutput = `BTR`
 
             return brainOutput
         }
