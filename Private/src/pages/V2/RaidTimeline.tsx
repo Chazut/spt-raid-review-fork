@@ -56,7 +56,28 @@ export default function RaidTimeline() {
           combined = [ ...combined, ...raid.kills ];
         }
         if (actionFilter.looting) {
-          combined = [ ...combined, ...raid.looting ]
+          // Filter out internal inventory moves (same player, same itemId, dropped+looted within 1s)
+          const lootItems = raid.looting as any[]
+          const moveIds = new Set<number>()
+          for (let i = 0; i < lootItems.length; i++) {
+            if (moveIds.has(i)) continue
+            const a = lootItems[i]
+            const aAdded = String(a.added).match(/^(1|true)$/i)
+            for (let j = i + 1; j < lootItems.length; j++) {
+              if (moveIds.has(j)) continue
+              const b = lootItems[j]
+              if (b.profileId !== a.profileId || b.itemId !== a.itemId) continue
+              if (Math.abs(Number(b.time) - Number(a.time)) > 1000) break
+              const bAdded = String(b.added).match(/^(1|true)$/i)
+              if (!!aAdded !== !!bAdded) {
+                moveIds.add(i)
+                moveIds.add(j)
+                break
+              }
+            }
+          }
+          const filteredLoot = lootItems.filter((_, idx) => !moveIds.has(idx))
+          combined = [ ...combined, ...filteredLoot ]
         }
   
         combined.map((tli) => {
@@ -105,7 +126,7 @@ export default function RaidTimeline() {
                     <td className="text-right pr-2">{looter ? intl(looter.name, intl_dir) : "Unknown"}</td>
                     <td className="text-center px-2 border-l border-r border-eft">
                       <span className="opacity-75">
-                      {Number(tli.added) ? " looted " : " dropped "}
+                      {String(tli.added).match(/^(1|true)$/i) ? " looted " : " dropped "}
                       </span>{" "}
                     </td>
                     <td className="text-left pl-2">

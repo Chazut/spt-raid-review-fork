@@ -105,13 +105,35 @@ export default function RaidOverview() {
 
     useEffect(() => {
       if (raid && raid.players) {
+        // Filter out internal inventory moves (same player, same itemId, dropped+looted within 1s)
+        const allLoot = (raid.looting || []) as any[]
+        const moveIds = new Set<number>()
+        for (let i = 0; i < allLoot.length; i++) {
+          if (moveIds.has(i)) continue
+          const a = allLoot[i]
+          const aAdded = String(a.added).match(/^(1|true)$/i)
+          for (let j = i + 1; j < allLoot.length; j++) {
+            if (moveIds.has(j)) continue
+            const b = allLoot[j]
+            if (b.profileId !== a.profileId || b.itemId !== a.itemId) continue
+            if (Math.abs(Number(b.time) - Number(a.time)) > 1000) break
+            const bAdded = String(b.added).match(/^(1|true)$/i)
+            if (!!aAdded !== !!bAdded) {
+              moveIds.add(i)
+              moveIds.add(j)
+              break
+            }
+          }
+        }
+        const filteredLoot = allLoot.filter((_, idx) => !moveIds.has(idx))
+
         const calculatedStats = new Map();
         for (let i = 0; i < raid.players.length; i++) {
           const player = raid.players[i];
 
           let kills = _.filter(raid.kills, (killer) => killer.profileId === player.profileId).length;
-          let lootingsAdded = _.filter(raid.looting, (looter) => looter.profileId === player.profileId && looter.added === '1').length;
-          let lootingsRemoved = _.filter(raid.looting, (looter) => looter.profileId === player.profileId && looter.added === '0').length;
+          let lootingsAdded = _.filter(filteredLoot, (looter) => looter.profileId === player.profileId && String(looter.added).match(/^(1|true)$/i)).length;
+          let lootingsRemoved = _.filter(filteredLoot, (looter) => looter.profileId === player.profileId && String(looter.added).match(/^(0|false)$/i)).length;
           let lootings = lootingsAdded - lootingsRemoved;
 
 
