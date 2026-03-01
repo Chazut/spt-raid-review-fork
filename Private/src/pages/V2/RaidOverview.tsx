@@ -35,10 +35,17 @@ const FACTION_COLORS: Record<string, { color: string, label: string }> = {
 };
 
 const SIDE_COLORS: Record<string, { color: string, label: string }> = {
-    'USEC':   { color: '#1E90FF', label: 'USEC' },
+    'Usec':   { color: '#1E90FF', label: 'USEC' },
     'Bear':   { color: '#CD5C5C', label: 'BEAR' },
     'Savage': { color: '#33FF57', label: 'Scav' },
 };
+
+const PMC_TEAM_COLORS = [
+    "#3357FF", "#FFD433", "#33FFF3", "#9370DB", "#BC8F8F",
+    "#FF5733", "#7FFFD4", "#FFFF99", "#ae85f9", "#FF9633",
+    "#3366FF", "#B87333", "#FFA533", "#33FFAF", "#5733FF",
+    "#FF33D4", "#33FFCC", "#FF5733", "#5733FF",
+];
 
 function needsDarkText(hex: string): boolean {
     const r = parseInt(hex.slice(1, 3), 16);
@@ -56,7 +63,7 @@ export default function RaidOverview() {
 
     const [ calcStats, setCalcStats ] = useState(null as null | Map<string, { kills: number, lootings: number, accuracy: number }>);
     const [ raidSummary, setRaidSummary ] = useState([] as { title: string; value: any;}[]);
-    const [ groupedByType, setGroupedByType ] = useState('' as string);
+    const [ groupedByType, setGroupedByType ] = useState('TEAM' as string);
     const [ groupedBy, setGroupedBy ] = useState([] as TrackingRaidDataPlayers[][]);
     const [ sortKey, setSortKey ] = useState<SortKey>(null);
     const [ sortDir, setSortDir ] = useState<SortDir>('desc');
@@ -151,8 +158,25 @@ export default function RaidOverview() {
         }
 
         if (groupedByType === 'TEAM') {
-          const newGrouped = _.chain(raid.players).groupBy('team').valuesIn().value();
-          setGroupedBy([...newGrouped])
+          const SIDE_ORDER = ['Player', 'USEC', 'BEAR', 'P. Scav', 'Boss', 'Goon', 'Follower', 'Raider', 'Rogue', 'Cultist', 'Bloodhound', 'Special', 'Infected', 'Mercenary', 'RUAF', 'UNTAR', 'Black Div', 'Sniper', 'Scav'];
+          const grouped = _.groupBy(raid.players, p => {
+            if (p.profileId === raid.profileId) return 'Player';
+            const isPMC = p.team === 'Usec' || p.team === 'Bear';
+            if (isPMC) {
+              const sideLabel = SIDE_COLORS[p.team]?.label || p.team;
+              return `${sideLabel}#${p.group}`;
+            }
+            const brain = getPlayerBrain(p);
+            if (FACTION_COLORS[brain]) return FACTION_COLORS[brain].label;
+            return SIDE_COLORS[p.team]?.label || p.team;
+          });
+          const sorted = _.sortBy(Object.entries(grouped), ([key]) => {
+            const base = key.split('#')[0];
+            const idx = SIDE_ORDER.indexOf(base);
+            const teamNum = key.includes('#') ? Number(key.split('#')[1]) || 0 : 0;
+            return (idx === -1 ? SIDE_ORDER.length : idx) * 100 + teamNum;
+          });
+          setGroupedBy(sorted.map(([, players]) => players));
         }
       }
 
@@ -305,7 +329,12 @@ export default function RaidOverview() {
         if (FACTION_COLORS[brain]) {
           return FACTION_COLORS[brain];
         }
-        return SIDE_COLORS[player.team] || { color: '#6B7280', label: player.team };
+        const side = SIDE_COLORS[player.team];
+        if (side && (player.team === 'Usec' || player.team === 'Bear')) {
+          const teamColor = PMC_TEAM_COLORS[(player.group ?? 0) % PMC_TEAM_COLORS.length];
+          return { color: teamColor, label: `${side.label} #${player.group}` };
+        }
+        return side || { color: '#6B7280', label: player.team };
       }
 
       function generatePlayerTable(raid: TrackingRaidData) {

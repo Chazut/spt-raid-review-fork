@@ -225,6 +225,20 @@
   height: 30px;
 }
 
+/* Own-death ring: red pulsing border around the skull for the hovered player's death */
+.own-death-ring {
+  display: inline-block;
+  border: 2px solid #EF4444;
+  border-radius: 50%;
+  padding: 3px;
+  background: rgba(239, 68, 68, 0.2);
+  box-shadow: 0 0 8px 2px rgba(239, 68, 68, 0.5);
+  line-height: 0;
+}
+.own-death-ring img {
+  height: 26px;
+}
+
 /* Kill Stream */
 .kill-stream {
   position: absolute;

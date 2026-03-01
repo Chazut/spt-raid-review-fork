@@ -133,6 +133,17 @@ function getMarkerLabel(player: any): string | null {
     return null
 }
 
+function getTooltipIconHtml(player: any, color: string, pmcIdx?: number): string {
+    const label = getMarkerLabel(player)
+    if (label && label !== 'BTR_ICON') {
+        return `<span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:${color};text-align:center;font-size:7px;font-weight:bold;color:#fff;line-height:12px;vertical-align:middle;margin-right:3px;">${label}</span>`
+    }
+    if (pmcIdx !== undefined) {
+        return `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${color};text-align:center;font-size:7px;font-weight:bold;color:#fff;line-height:12px;vertical-align:middle;margin-right:3px;border:1px solid rgba(255,255,255,0.6);">${pmcIdx}</span>`
+    }
+    return `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};vertical-align:middle;margin-right:3px;"></span>`
+}
+
 function createPlayerMarker(latlng: any, color: string, player: any, proportionalScale: number, opacity: number = 1, pmcIndex?: number, tooltipText?: string): L.Layer {
     const displayName = tooltipText || getDisplayName(player)
     const tooltipOpts: L.TooltipOptions = { direction: 'top', offset: [0, -10], className: 'player-tooltip' }
@@ -373,7 +384,32 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     }, [raidData.players])
 
     const focusItem = useRef(searchParams.get('q') ? searchParams.get('q').split(',') : [])
+    const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+    const playerFocusRef = useRef<string | null>(null)
+    const focusVictimIdsRef = useRef<Set<string>>(new Set())
+    const focusKillerIdRef = useRef<string | null>(null)
+    const focusLayersRef = useRef<L.Layer[]>([])
     const mapViewRef = useRef({})
+
+    // Kill relationship sets for legend highlighting + refs for position renderer
+    const { focusVictimIds, focusKillerId } = useMemo(() => {
+        const victimIds = new Set<string>()
+        let killerId: string | null = null
+        if (playerFocus && raidData?.kills) {
+            for (const e of raidData.kills) {
+                if (e.time >= timeEndLimit) continue
+                if (e.profileId === playerFocus && e.profileId !== e.killedId) {
+                    victimIds.add(e.killedId)
+                }
+                if (e.killedId === playerFocus) {
+                    killerId = e.profileId
+                }
+            }
+        }
+        focusVictimIdsRef.current = victimIds
+        focusKillerIdRef.current = killerId
+        return { focusVictimIds: victimIds, focusKillerId: killerId }
+    }, [playerFocus, raidData?.kills, timeEndLimit])
 
     const ref = useRef()
     const mapRef = useRef(null)
@@ -468,6 +504,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                     killedNickname: killedNickname ? intl(killedNickname.name, intl_dir) : 'Unknown',
                     weapon: kill.weapon,
                     distance: Number(kill.distance),
+                    bodyPart: kill.bodyPart,
                     source: JSON.parse(kill.positionKiller),
                     target: JSON.parse(kill.positionKilled),
                 })
@@ -732,70 +769,73 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             if (MAP && !hidePlayers && cleanPositions.length > 0) {
                 let endOfLine = cleanPositions[cleanPositions.length - 1]
 
-                // Focused Player
-                if (playerFocus !== null && playerFocus === playerId) {
-
-                    if (!MAP) return
-                    L.polyline(cleanPositions, { color: pickedColor, weight: 4, opacity: 1 })
-                        .addTo(MAP)
-                        .on('click', () => {
-                            setFollowPlayer(playerId)
-                            setFollowPlayerZoomed(false)
-                        })
-                    const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})`
-                    const marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, 1, pmcIndexMap[playerId], tip)
-                        .on('click', () => {
-                            setFollowPlayer(playerId)
-                            setFollowPlayerZoomed(false)
-                        })
-                    deferredMarkers.push({ layer: marker, playerId })
-                } else {
-                    let focusedOpacityPolyLine = preserveHistory ? 0.1 : isPlayerDead ? 0 : 0.1
-                    let focusedOpacityCircle = isPlayerDead ? 0 : 0.1
-
-                    if (!MAP) return
-                    L.polyline(cleanPositions, { color: pickedColor, weight: 4, opacity: focusedOpacityPolyLine })
-                        .addTo(MAP)
-                        .on('click', () => {
-                            setFollowPlayer(playerId)
-                            setFollowPlayerZoomed(false)
-                        })
-                    if (!isPlayerDead) {
-                        const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})`
-                        deferredMarkers.push({ layer: createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, focusedOpacityCircle, pmcIndexMap[playerId], tip), playerId, followAction: followPlayer === playerId })
+                // Determine opacity based on current focus (read from refs to avoid re-render dependency)
+                const currentFocus = playerFocusRef.current
+                const currentVictimIds = focusVictimIdsRef.current
+                const currentKillerId = focusKillerIdRef.current
+                let polylineOpacity: number
+                let markerOpacity: number
+                if (currentFocus !== null) {
+                    if (currentFocus === playerId) {
+                        polylineOpacity = 1
+                        markerOpacity = 1
+                    } else if (currentVictimIds.has(playerId)) {
+                        // Victim of focused player: hide trail (dead, no dot rendered)
+                        polylineOpacity = 0
+                        markerOpacity = 0
+                    } else if (currentKillerId && currentKillerId === playerId) {
+                        // Killer of focused player: keep visible
+                        polylineOpacity = 0.6
+                        markerOpacity = 0.8
+                    } else {
+                        polylineOpacity = isPlayerDead ? 0 : 0.1
+                        markerOpacity = isPlayerDead ? 0 : 0.1
                     }
+                } else {
+                    polylineOpacity = preserveHistory ? 0.8 : isPlayerDead ? 0 : 0.8
+                    markerOpacity = isPlayerDead ? 0 : 1
                 }
 
-                // Normal rendering
-                if (playerFocus === null) {
-                    let focusedOpacityPolyLine = preserveHistory ? 0.8 : isPlayerDead ? 0 : 0.8
-                    L.polyline(cleanPositions, { color: pickedColor, weight: 4, opacity: focusedOpacityPolyLine })
-                        .addTo(MAP)
-                        .on('click', () => {
-                            setFollowPlayer(playerId)
-                            setFollowPlayerZoomed(false)
-                        })
-                    if (!isPlayerDead) {
-                        const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})`
-                        deferredMarkers.push({ layer: createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, 1, pmcIndexMap[playerId], tip), playerId })
-                        if (followPlayer === playerId) {
-                            if (!followPlayerZoomed) {
-                                MAP.setZoom(3)
-                                setFollowPlayerZoomed(true)
-                            }
-                            MAP.panTo(endOfLine, 4)
+                if (!MAP) return
+                const pl = L.polyline(cleanPositions, { color: pickedColor, weight: 4, opacity: polylineOpacity })
+                    .addTo(MAP)
+                    .on('click', () => {
+                        setFollowPlayer(playerId)
+                        setFollowPlayerZoomed(false)
+                    })
+                pl._rr_playerId = playerId
+                pl._rr_isDead = !!isPlayerDead
+                pl._rr_normalOpacity = preserveHistory ? 0.8 : isPlayerDead ? 0 : 0.8
+
+                if (!isPlayerDead) {
+                    const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})`
+                    const marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, markerOpacity, pmcIndexMap[playerId], tip)
+                    marker._rr_playerId = playerId
+                    marker._rr_isDead = false
+                    marker._rr_normalOpacity = 1
+                    deferredMarkers.push({ layer: marker, playerId })
+                    if (followPlayer === playerId) {
+                        if (!followPlayerZoomed) {
+                            MAP.setZoom(3)
+                            setFollowPlayerZoomed(true)
                         }
+                        MAP.panTo(endOfLine, 4)
                     }
                 }
             }
         }
 
         // Second pass: add all markers on top of polylines
-        for (const { layer, playerId, followAction } of deferredMarkers) {
+        for (const { layer, playerId } of deferredMarkers) {
             layer.addTo(MAP)
-            if (followAction) {
-                MAP.panTo((layer as any).getLatLng?.() || (layer as any)._latlng, 4)
-            }
+            layer.on('mouseover', () => {
+                if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current)
+                setPlayerFocus(playerId)
+            })
+            layer.on('mouseout', () => {
+                if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current)
+                focusTimeoutRef.current = setTimeout(() => setPlayerFocus(null), 100)
+            })
         }
 
         if (sliderTimes.length === 0) {
@@ -808,7 +848,173 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             setTimeEndLimit(times[times.length - 1])
             setTimeCurrentIndex(times.length - 1)
         }
-    }, [mapIsReady, mapViewRef, timeEndLimit, timeStartLimit, timeCurrentIndex, MAP, preserveHistory, events, hideEvents, hidePlayers, followPlayer, playerFocus, pmcIndexMap])
+    }, [mapIsReady, mapViewRef, timeEndLimit, timeStartLimit, timeCurrentIndex, MAP, preserveHistory, events, hideEvents, hidePlayers, followPlayer, pmcIndexMap])
+
+    // Focus overlay: adjusts layer opacity + kill visualization without full re-render
+    useEffect(() => {
+        if (!MAP || !mapIsReady) return
+        playerFocusRef.current = playerFocus
+
+        // Clean up previous focus layers
+        for (const layer of focusLayersRef.current) {
+            MAP.removeLayer(layer)
+        }
+        focusLayersRef.current = []
+
+        // Build victim/killer sets for kill relationship highlighting
+        const victimIds = new Set<string>()
+        let killerId: string | null = null
+        if (playerFocus) {
+            for (const e of events) {
+                if (e.time >= timeEndLimit) continue
+                if (e.profileId === playerFocus && e.profileId !== e.killedId) {
+                    victimIds.add(e.killedId)
+                }
+                if (e.killedId === playerFocus) {
+                    killerId = e.profileId
+                }
+            }
+        }
+
+        // Adjust opacity of all tagged player layers
+        for (const key in MAP._layers) {
+            const layer = MAP._layers[key]
+            if (!layer._rr_playerId) continue
+
+            if (playerFocus === null) {
+                // Restore normal opacity
+                if (layer instanceof L.Polyline && !(layer instanceof L.Circle)) {
+                    layer.setStyle({ opacity: layer._rr_normalOpacity ?? 0.8 })
+                } else if (layer instanceof L.Circle) {
+                    const op = layer._rr_normalOpacity ?? 1
+                    layer.setStyle({ opacity: op, fillOpacity: op })
+                }
+                if (layer instanceof L.Marker) {
+                    layer.setOpacity(layer._rr_normalOpacity ?? 1)
+                }
+            } else if (playerFocus === layer._rr_playerId) {
+                // Full opacity for focused player
+                if (layer instanceof L.Polyline && !(layer instanceof L.Circle)) {
+                    layer.setStyle({ opacity: 1 })
+                } else if (layer instanceof L.Circle) {
+                    layer.setStyle({ opacity: 1, fillOpacity: 1 })
+                }
+                if (layer instanceof L.Marker) {
+                    layer.setOpacity(1)
+                }
+            } else {
+                // Determine opacity: victims hidden, killer visible, others dimmed
+                const op = victimIds.has(layer._rr_playerId) ? 0
+                    : (killerId && killerId === layer._rr_playerId) ? 0.7
+                    : layer._rr_isDead ? 0 : 0.1
+                if (layer instanceof L.Polyline && !(layer instanceof L.Circle)) {
+                    layer.setStyle({ opacity: op })
+                } else if (layer instanceof L.Circle) {
+                    layer.setStyle({ opacity: op, fillOpacity: op })
+                }
+                if (layer instanceof L.Marker) {
+                    layer.setOpacity(op)
+                }
+            }
+        }
+
+        // Restore any previously modified tooltips, then enrich focused player's dot tooltip
+        for (const key in MAP._layers) {
+            const layer = MAP._layers[key]
+            if (layer._rr_originalTooltip !== undefined) {
+                layer.setTooltipContent(layer._rr_originalTooltip)
+                layer.closeTooltip()
+                delete layer._rr_originalTooltip
+            }
+        }
+        if (playerFocus) {
+            const kills = events.filter(e => e.profileId === playerFocus && e.profileId !== e.killedId && e.time < timeEndLimit)
+            const death = events.find(e => e.killedId === playerFocus && e.time < timeEndLimit)
+
+            // Build killfeed HTML with icons
+            const buildFeedHtml = (titleHtml: string) => {
+                let html = `<strong>${titleHtml}</strong>`
+                if (kills.length > 0 || death) {
+                    html += '<div style="margin-top:4px;border-top:1px solid rgba(255,255,255,0.2);padding-top:4px;font-size:11px;">'
+                    for (const k of kills) {
+                        const victim = raidData.players.find(p => p.profileId === k.killedId)
+                        const victimIdx = victim ? raidData.players.indexOf(victim) : 0
+                        const victimIcon = victim ? getTooltipIconHtml(victim, getPlayerColor(victim, victimIdx), pmcIndexMap[k.killedId]) : ''
+                        html += `<div>\u2620 ${victimIcon}${k.killedNickname} (${intl([k.weapon.replace('Name', 'ShortName')], intl_dir)}, ${k.distance.toFixed(0)}m${k.bodyPart ? ', ' + k.bodyPart : ''})</div>`
+                    }
+                    if (death) {
+                        const killer = raidData.players.find(p => p.profileId === death.profileId)
+                        const killerIdx = killer ? raidData.players.indexOf(killer) : 0
+                        const killerIcon = killer ? getTooltipIconHtml(killer, getPlayerColor(killer, killerIdx), pmcIndexMap[death.profileId]) : ''
+                        html += `<div style="color:#EF4444;">\u{1F480} ${killerIcon}${death.profileNickname} (${intl([death.weapon.replace('Name', 'ShortName')], intl_dir)}, ${death.distance.toFixed(0)}m${death.bodyPart ? ', ' + death.bodyPart : ''})</div>`
+                    }
+                    html += '</div>'
+                }
+                return html
+            }
+
+            // Try to find existing marker for this player (alive players)
+            let found = false
+            for (const key in MAP._layers) {
+                const layer = MAP._layers[key]
+                if (layer._rr_playerId === playerFocus && (layer instanceof L.Marker || layer instanceof L.Circle)) {
+                    const tooltip = layer.getTooltip()
+                    if (tooltip) {
+                        layer._rr_originalTooltip = tooltip.getContent()
+                        layer.setTooltipContent(buildFeedHtml(layer._rr_originalTooltip))
+                        layer.openTooltip()
+                    }
+                    found = true
+                    break
+                }
+            }
+
+            // Dead player: no marker on map, create a temporary one at death position
+            if (!found && death) {
+                const player = raidData.players.find(p => p.profileId === playerFocus)
+                const playerIdx = player ? raidData.players.indexOf(player) : 0
+                const color = player ? getPlayerColor(player, playerIdx) : '#999'
+                const displayName = player ? `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})` : 'Unknown'
+                const tmpMarker = L.circleMarker([death.target.z, death.target.x], {
+                    radius: 6, color, fillColor: color, fillOpacity: 0.8, weight: 1, interactive: false
+                }).addTo(MAP)
+                tmpMarker.bindTooltip(buildFeedHtml(displayName), { direction: 'top', offset: [0, -10], className: 'player-tooltip' })
+                tmpMarker.openTooltip()
+                focusLayersRef.current.push(tmpMarker)
+            }
+        }
+
+        // Add kill visualization if a player is focused
+        if (playerFocus && events.length > 0) {
+            // Kills made by hovered player (respecting timeline)
+            const playerKills = events.filter(e => e.profileId === playerFocus && e.profileId !== e.killedId && e.time < timeEndLimit)
+            for (const kill of playerKills) {
+                const line = L.polyline(
+                    [[kill.source.z, kill.source.x], [kill.target.z, kill.target.x]],
+                    { color: 'red', weight: 2, dashArray: [10], dashOffset: 3, opacity: 1, interactive: false }
+                ).addTo(MAP)
+                focusLayersRef.current.push(line)
+                const skullHtml = `<img src="/skull.png" /><span class="tooltiptext event event-map text-sm"><strong>${kill.killedNickname}</strong><br/>${intl([kill.weapon.replace('Name', 'ShortName')], intl_dir)}, ${kill.distance.toFixed(0)}m${kill.bodyPart ? ', ' + kill.bodyPart : ''}</span>`
+                const skullIcon = L.divIcon({ className: 'death-icon tooltip event follow-kill-marker', html: skullHtml })
+                const marker = L.marker([kill.target.z, kill.target.x], { icon: skullIcon, interactive: false, zIndexOffset: -1000 }).addTo(MAP)
+                focusLayersRef.current.push(marker)
+            }
+
+            // Death of the hovered player (if dead) — distinct red-ringed skull
+            const deathEvent = events.find(e => e.killedId === playerFocus && e.time < timeEndLimit)
+            if (deathEvent) {
+                const line = L.polyline(
+                    [[deathEvent.source.z, deathEvent.source.x], [deathEvent.target.z, deathEvent.target.x]],
+                    { color: 'red', weight: 2, dashArray: [10], dashOffset: 3, opacity: 1, interactive: false }
+                ).addTo(MAP)
+                focusLayersRef.current.push(line)
+                const ownDeathHtml = `<div class="own-death-ring"><img src="/skull.png" /></div><span class="tooltiptext event event-map text-sm"><strong>${deathEvent.profileNickname}</strong><br/>killed<br/><strong>${deathEvent.killedNickname}</strong><br/>${intl([deathEvent.weapon.replace('Name', 'ShortName')], intl_dir)}, ${deathEvent.distance.toFixed(0)}m${deathEvent.bodyPart ? ', ' + deathEvent.bodyPart : ''}</span>`
+                const ownDeathIcon = L.divIcon({ className: 'death-icon tooltip event follow-kill-marker', html: ownDeathHtml })
+                const marker = L.marker([deathEvent.target.z, deathEvent.target.x], { icon: ownDeathIcon, interactive: false, zIndexOffset: -1000 }).addTo(MAP)
+                focusLayersRef.current.push(marker)
+            }
+        }
+    }, [playerFocus, MAP, mapIsReady, events, timeEndLimit, intl_dir])
 
     // Slider Time Update
     useEffect(() => {
@@ -998,7 +1204,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         
             // Remove polylines without eventType or not being ballisticsLine, circles, and special bot markers
             const isSpecialBotMarker = layer instanceof L.Marker && layer.options?.icon?.options?.className === 'special-bot-marker';
-            if ((layer instanceof L.Polyline && (!layer.eventType || layer.eventType !== 'ballisticsLine')) || layer instanceof L.Circle || isSpecialBotMarker) {
+            const isFollowKillMarker = layer instanceof L.Marker && layer.options?.icon?.options?.className?.includes('follow-kill-marker');
+            if ((layer instanceof L.Polyline && (!layer.eventType || layer.eventType !== 'ballisticsLine')) || layer instanceof L.Circle || isSpecialBotMarker || isFollowKillMarker) {
                 m.removeLayer(layer);
                 continue;
             }
@@ -1252,7 +1459,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                                 <li
                                                                     className="flex items-center justify-between player-legend-item px-2"
                                                                     key={player.profileId}
-                                                                    onMouseEnter={() => setPlayerFocus(player.profileId)}
+                                                                    style={focusVictimIds.has(player.profileId) ? { borderLeft: '3px solid #22C55E', background: 'rgba(34,197,94,0.12)' } : focusKillerId === player.profileId ? { borderLeft: '3px solid #EF4444', background: 'rgba(239,68,68,0.12)' } : undefined}
+                                                                    onMouseEnter={() => { if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current); setPlayerFocus(player.profileId) }}
                                                                     onMouseLeave={() => setPlayerFocus(null)}
                                                                     onClick={() => {
                                                                         setFollowPlayer(followPlayer === player.profileId ? null : player.profileId)
@@ -1312,7 +1520,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                                 <li
                                                                     className="flex items-center justify-between player-legend-item px-2"
                                                                     key={player.profileId}
-                                                                    onMouseEnter={() => setPlayerFocus(player.profileId)}
+                                                                    style={focusVictimIds.has(player.profileId) ? { borderLeft: '3px solid #22C55E', background: 'rgba(34,197,94,0.12)' } : focusKillerId === player.profileId ? { borderLeft: '3px solid #EF4444', background: 'rgba(239,68,68,0.12)' } : undefined}
+                                                                    onMouseEnter={() => { if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current); setPlayerFocus(player.profileId) }}
                                                                     onMouseLeave={() => setPlayerFocus(null)}
                                                                     onClick={() => {
                                                                         setFollowPlayer(followPlayer === player.profileId ? null : player.profileId)
@@ -1355,7 +1564,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                     <li
                                                         className="flex items-center justify-between player-legend-item px-2"
                                                         key={player.profileId}
-                                                        onMouseEnter={() => setPlayerFocus(player.profileId)}
+                                                        style={focusVictimIds.has(player.profileId) ? { borderLeft: '3px solid #22C55E', background: 'rgba(34,197,94,0.12)' } : focusKillerId === player.profileId ? { borderLeft: '3px solid #EF4444', background: 'rgba(239,68,68,0.12)' } : undefined}
+                                                        onMouseEnter={() => { if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current); setPlayerFocus(player.profileId) }}
                                                         onMouseLeave={() => setPlayerFocus(null)}
                                                         onClick={() => {
                                                             setFollowPlayer(followPlayer === player.profileId ? null : player.profileId)
@@ -1416,7 +1626,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                         >
                                             VIEW
                                         </a>
-                                        ] {(() => { const p = raidData.players.find(p => p.profileId === e.profileId); const idx = p ? raidData.players.indexOf(p) : 0; return p ? getLegendIcon(p, getPlayerColor(p, idx), pmcIndexMap[p.profileId]) : null })()}<strong>{e.profileNickname}</strong> killed {(() => { const p = raidData.players.find(p => p.profileId === e.killedId); const idx = p ? raidData.players.indexOf(p) : 0; return p ? getLegendIcon(p, getPlayerColor(p, idx), pmcIndexMap[p.profileId]) : null })()}<strong>{e.killedNickname}</strong> ({intl([e.weapon.replace('Name', 'ShortName')], intl_dir)} - {e.distance.toFixed(0)}m)
+                                        ] {(() => { const p = raidData.players.find(p => p.profileId === e.profileId); const idx = p ? raidData.players.indexOf(p) : 0; return p ? getLegendIcon(p, getPlayerColor(p, idx), pmcIndexMap[p.profileId]) : null })()}<strong>{e.profileNickname}</strong> killed {(() => { const p = raidData.players.find(p => p.profileId === e.killedId); const idx = p ? raidData.players.indexOf(p) : 0; return p ? getLegendIcon(p, getPlayerColor(p, idx), pmcIndexMap[p.profileId]) : null })()}<strong>{e.killedNickname}</strong> ({intl([e.weapon.replace('Name', 'ShortName')], intl_dir)} - {e.distance.toFixed(0)}m, {e.bodyPart})
                                     </span>
                                 </div>
                             ))}
