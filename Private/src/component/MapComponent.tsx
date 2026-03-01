@@ -16,6 +16,7 @@ import { TrackingPositionalData } from '../types/api_types.js';
 import { PlayerSlider } from './MapPlayerSlider.js';
 
 import BotMapping from '../assets/botMapping.json'
+import { getMarkerLabel, getPlayerColor, getLegendIcon, PMC_COLORS, buildPmcIndexMap } from '../helpers/players'
 
 import 'leaflet/dist/leaflet.css';
 
@@ -60,24 +61,6 @@ function classifyPlayer(player: any): string {
     }
 }
 
-function getLegendIcon(player: any, color: string, pmcIdx?: number): JSX.Element {
-    const label = getMarkerLabel(player)
-    if (label === 'BTR_ICON') {
-        // BTR vehicle icon
-        return <span style={{ width: '24px', height: '18px', marginRight: '4px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><svg viewBox="0 0 24 18" width="24" height="18" fill="none"><rect x="2" y="3" width="20" height="8" rx="1" fill={color}/><rect x="5" y="1" width="10" height="4" rx="1" fill={color}/><line x1="15" y1="3" x2="20" y2="5" stroke={color} strokeWidth="1.2"/><circle cx="5.5" cy="13.5" r="2.5" fill={color}/><circle cx="12" cy="13.5" r="2.5" fill={color}/><circle cx="18.5" cy="13.5" r="2.5" fill={color}/><circle cx="5.5" cy="13.5" r="1" fill="#1a1a1a"/><circle cx="12" cy="13.5" r="1" fill="#1a1a1a"/><circle cx="18.5" cy="13.5" r="1" fill="#1a1a1a"/></svg></span>
-    }
-    if (label) {
-        // Square marker with letter — matches map
-        return <span style={{ width: '18px', height: '18px', borderRadius: '2px', marginRight: '6px', background: color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 'bold', color: '#fff', textShadow: '0 0 2px rgba(0,0,0,0.9)', border: '1px solid rgba(255,255,255,0.6)', flexShrink: 0, lineHeight: 1 }}>{label}</span>
-    }
-    if (pmcIdx !== undefined) {
-        // Round marker with number — matches map
-        return <span style={{ width: '18px', height: '18px', borderRadius: '50%', marginRight: '6px', background: color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '9px', fontWeight: 'bold', color: '#fff', textShadow: '0 0 2px rgba(0,0,0,0.9)', border: '1px solid rgba(255,255,255,0.6)', flexShrink: 0, lineHeight: 1 }}>{pmcIdx}</span>
-    }
-    // Plain circle for scavs
-    return <span style={{ width: '10px', height: '10px', minWidth: '10px', minHeight: '10px', borderRadius: '50%', marginRight: '6px', background: color, border: '1px solid rgba(255,255,255,0.4)', flexShrink: 0, display: 'inline-block' }}></span>
-}
-
 const LEGEND_GROUPS = [
     { key: 'PMC', label: 'PMC' },
     { key: 'PLAYER_SCAV', label: 'Player Scav' },
@@ -88,50 +71,6 @@ const LEGEND_GROUPS = [
     { key: 'FACTION', label: 'Faction' },
     { key: 'SCAV', label: 'Scav' },
 ] as const
-
-function getMarkerLabel(player: any): string | null {
-    const type = (player?.type || '').toUpperCase()
-
-    // Bosses
-    if (type.includes('KILLA')) return 'Ki'
-    if (type.includes('RASHALA')) return 'Ra'
-    if (type.includes('SHTURMAN')) return 'Sh'
-    if (type.includes('TAGILLA')) return 'Ta'
-    if (type.includes('SANITAR')) return 'Sa'
-    if (type.includes('GLUHAR')) return 'Gl'
-    if (type.includes('ZRYACHIY')) return 'Zr'
-    if (type.includes('KABAN')) return 'Kb'
-    if (type.includes('KOLONTAY')) return 'Ko'
-    if (type.includes('PARTIZAN')) return 'P'
-
-    // Goons
-    if (type.includes('KNIGHT')) return 'Kn'
-    if (type.includes('BIGPIPE')) return 'BP'
-    if (type.includes('BIRDEYE')) return 'BE'
-
-    // Factions
-    if (type.includes('MERCENARY')) return 'M'
-    if (type.includes('RUAF')) return 'R'
-    if (type.includes('UNTAR')) return 'U'
-    if (type.includes('BLACK DIV')) return 'BD'
-
-    // Labyrinth
-    if (type.includes('SHADOW TAGILLA')) return 'ST'
-    if (type.includes('VENGEFUL KILLA')) return 'VK'
-    if (type.includes('INFECTED')) return 'If'
-    if (type.includes('SPIRIT')) return 'Sp'
-
-    // Special types
-    if (type.includes('RAIDER')) return 'Rd'
-    if (type.includes('ROGUE')) return 'Rg'
-    if (type.includes('CULTIST PRIEST')) return 'CP'
-    if (type.includes('CULTIST')) return 'Cu'
-    if (type.includes('BLOODHOUND')) return 'Bh'
-    if (type.includes('BTR')) return 'BTR_ICON'
-    if (type.includes('SNIPER')) return 'Sn'
-
-    return null
-}
 
 function getTooltipIconHtml(player: any, color: string, pmcIdx?: number): string {
     const label = getMarkerLabel(player)
@@ -275,55 +214,6 @@ function calculateProportionalRadius(mapBounds, zoomLevel) {
     return baseRadius * scalingFactor / zoomAdjustment;
 }
   
-const colors = [
-    "#3357FF", // Blue
-    "#FFD433", // Yellow
-    "#33FFF3", // Cyan
-    "#9370DB", // MediumPurple
-    "#BC8F8F", // RosyBrown
-    "#FF5733", // Red-Orange
-    "#7FFFD4", // Aquamarine
-    "#FFFF99", // Canary
-    "#ae85f9", // Light Purple
-    "#FF9633", // Orange
-    "#3366FF", // Royal Blue
-    "#B87333", // Copper
-    "#FFA533", // Light Orange
-    "#33FFAF", // Mint Green
-    "#5733FF", // Indigo
-    "#FF33D4", // Light Magenta
-    "#33FFCC", // Teal
-    "#FF5733", // Coral
-    "#5733FF", // Dark Violet
-    "#FFD433", // Gold
-    "#B833FF", // Violet
-    "#33FF57", // Lime
-    "#33FF57", // Forest Green
-    "#660000", // Blood red
-    "#3399FF", // Sky Blue
-    "#FF33B8", // Rose
-    "#8CFF33", // Lime Green
-    "#33FFD5", // Turquoise
-    "#FF6F33", // Dark Orange
-    "#FF3333", // Crimson
-    "#FF5733", // Tomato
-    "#33D4FF", // Deep Sky Blue
-    "#FF5733", // Salmon
-    "#FF3380", // Deep Pink
-    "#33FF57", // Spring Green
-    "#33FF57", // Medium Sea Green
-    "#FF33E9", // Orchid
-    "#FFD433", // Khaki
-    "#ae85f9", // Light Purple
-    "#FF33D4", // Light Pink
-    "#8D33FF", // Plum
-    "#33FFF3", // Light Cyan
-    "#FF9633", // Dark Salmon
-    "#33FF8D", // Pale Green
-    "#FF33A1", // Deep Pink
-    "#33FF8D", // Sea Green
-    "#33FFF3", // Aqua
-];
 
 export default function MapComponent({ raidData, raidId, positions, intl_dir }) {
     const navigate = useNavigate()
@@ -367,21 +257,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     const [events, setEvents] = useState([])
 
     // Pre-compute PMC index within each team group (for numbered markers in legend + map)
-    const pmcIndexMap = useMemo(() => {
-        const map: Record<string, number> = {}
-        const groupCounters: Record<number, number> = {}
-        for (const p of raidData.players) {
-            const isPMC = p.team === 'Usec' || p.team === 'Bear'
-            const isHuman = p.type === 'HUMAN'
-            if (isPMC || isHuman) {
-                const group = p.group ?? 0
-                if (groupCounters[group] === undefined) groupCounters[group] = 0
-                groupCounters[group]++
-                map[p.profileId] = groupCounters[group]
-            }
-        }
-        return map
-    }, [raidData.players])
+    const pmcIndexMap = useMemo(() => buildPmcIndexMap(raidData.players), [raidData.players])
 
     const focusItem = useRef(searchParams.get('q') ? searchParams.get('q').split(',') : [])
     const focusTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -1308,62 +1184,6 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         }
 
         return ''
-    }
-
-    function getPlayerColor(player: TrackingRaidDataPlayers, index: number): string {
-        if (player === undefined) {
-            console.debug(player, index)
-            return
-        }
-
-        let botMapping = BotMapping[player.type]
-        if (player.name === 'Knight') {
-            botMapping = {
-                type: 'GOON',
-            }
-        }
-        if (!botMapping) {
-            botMapping = {
-                type: 'UNKNOWN',
-            }
-        }
-
-        switch (botMapping.type) {
-            case 'SCAV':
-                return '#33FF57' // Green - Scav
-            case 'BOSS':
-                return '#FF0000' // Red - Boss
-            case 'ROGUE':
-            case 'FOLLOWER':
-                return '#ff7b00' // Orange - Follower
-            case 'BLOODHOUND':
-                return '#6d0000' // Dark Red - Raider
-            case 'RAIDER':
-                return '#FF00FF' // Magenta - Raider
-            case 'PLAYER_SCAV':
-                return '#33FF8D' // Light Green - Scav Player
-            case 'SNIPER':
-                return '#00911a' // Dark Green - Sniper
-            case 'GOON':
-                return '#ff005d' // Between Magenta & Red  - Goon
-            case 'CULT':
-                return '#6f00ff' // Dark Purple - Cultist
-            case 'OTHER':
-                return '#00eeff' // Other - Cyan
-            case 'MERCENARY':
-                return '#FFD700' // Gold - Mercenary
-            case 'RUAF':
-                return '#4A90D9' // Steel Blue - RUAF
-            case 'UNTAR':
-                return '#00BFFF' // Light Blue - UNTAR
-            case 'BLACKDIV':
-                return '#555555' // Dark Grey - Black Division
-            case 'INFECTED':
-                return '#7FFF00' // Chartreuse - Infected (Labyrinth)
-            default:
-                if (player.type === 'PLAYER' && player.team === 'Savage') return '#33FF57' // Green - Scav
-                else return colors[(player.group ?? index) % colors.length] // PMC - color by team group
-        }
     }
 
     return (

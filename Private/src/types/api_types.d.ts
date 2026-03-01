@@ -87,6 +87,7 @@ export interface TrackingBallistic {
   profileId: string;
   time: number;
   weaponId: string;
+  weaponName?: string;
   ammoId: string;
   hitPlayerId: string;
   source: string;

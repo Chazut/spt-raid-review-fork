@@ -210,11 +210,12 @@ public class WsPacketHandler
                 case "BALLISTIC":
                 {
                     await _db.ExecuteAsync(
-                        "INSERT INTO ballistic (raidId, time, profileId, weaponId, ammoId, hitPlayerId, source, target) VALUES ($raidId, $time, $profileId, $weaponId, $ammoId, $hitPlayerId, $source, $target)",
+                        "INSERT INTO ballistic (raidId, time, profileId, weaponId, weaponName, ammoId, hitPlayerId, source, target) VALUES ($raidId, $time, $profileId, $weaponId, $weaponName, $ammoId, $hitPlayerId, $source, $target)",
                         ("$raidId", raidId!),
                         ("$time", GetString(payload, "time")),
                         ("$profileId", GetString(payload, "profileId")),
                         ("$weaponId", GetString(payload, "weaponId")),
+                        ("$weaponName", GetString(payload, "weaponName")),
                         ("$ammoId", GetString(payload, "ammoId")),
                         ("$hitPlayerId", GetString(payload, "hitPlayerId")),
                         ("$source", GetString(payload, "source")),

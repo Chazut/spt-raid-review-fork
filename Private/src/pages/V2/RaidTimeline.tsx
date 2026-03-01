@@ -1,8 +1,9 @@
 import { useOutletContext } from "react-router-dom";
 import { TrackingRaidData } from "../../types/api_types";
 import { bodypart, intl, msToHMS } from "../../helpers";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import _ from "lodash";
+import { getLegendIcon, getPlayerColor, buildPmcIndexMap } from "../../helpers/players";
 
 import cyr_to_en from '../../assets/cyr_to_en.json';
 
@@ -19,6 +20,7 @@ export default function RaidTimeline() {
   };
 
   const intl_dir : Record<string, string> = {...intl_dir_ot, ...cyr_to_en};
+  const pmcIndexMap = useMemo(() => raid?.players ? buildPmcIndexMap(raid.players) : {}, [raid?.players]);
 
   useEffect(() => {
 
@@ -86,9 +88,15 @@ export default function RaidTimeline() {
         });
         combined.sort((a, b) => a.time - b.time);
   
+        const playerIcon = (p: any) => {
+          if (!p || !raid.players) return null
+          const idx = raid.players.indexOf(p)
+          return getLegendIcon(p, getPlayerColor(p, idx), pmcIndexMap[p.profileId])
+        }
+
         return combined.map((tli: any, index) => {
           if (raid.players === undefined) return;
-  
+
           const killer = raid.players.find(
             (player) => player.profileId === tli.profileId
           );
@@ -98,7 +106,7 @@ export default function RaidTimeline() {
           const looter = raid.players.find(
             (player) => player.profileId === tli.profileId
           );
-  
+
           let playerIsFiltered = usernameFilter[tli.profileId];
           if (!playerIsFiltered) return;
 
@@ -108,12 +116,12 @@ export default function RaidTimeline() {
                   <>
                     {/* @ts-ignore */}
                     <td className="opacity-75 px-2 border-r border-eft">{msToHMS(tli.time)}</td>
-                    <td className="text-right pr-2">{killer ? intl(killer.name, intl_dir) : "Unknown"}</td>
+                    <td className="text-right pr-2"><span className="inline-flex items-center">{playerIcon(killer)}{killer ? intl(killer.name, intl_dir) : "Unknown"}</span></td>
                     <td className="text-center px-2 border-l border-r border-eft">
-                      <span className="opacity-75">killed </span>
+                      <span style={{ color: '#EF4444' }}>killed </span>
                     </td>
                     <td className="text-left px-2">
-                      <strong>{killed ? intl(killed.name, intl_dir) : "Unknown"}</strong>
+                      <span className="inline-flex items-center">{playerIcon(killed)}<strong>{killed ? intl(killed.name, intl_dir) : "Unknown"}</strong></span>
                       <span className="opacity-75"> with a </span>
                         {/* @ts-ignore */}
                       <strong>{ intl([tli.weapon.replace("Name", "ShortName")], intl_dir) } [{bodypart[tli.bodyPart]? bodypart[tli.bodyPart]: tli.bodyPart}] [{ Number(tli.distance).toFixed(2) }m]</strong>
@@ -123,9 +131,9 @@ export default function RaidTimeline() {
                   <>
                     {/* @ts-ignore */}
                     <td className="opacity-75 px-2 border-r border-eft">{msToHMS(tli.time)}</td>
-                    <td className="text-right pr-2">{looter ? intl(looter.name, intl_dir) : "Unknown"}</td>
+                    <td className="text-right pr-2"><span className="inline-flex items-center">{playerIcon(looter)}{looter ? intl(looter.name, intl_dir) : "Unknown"}</span></td>
                     <td className="text-center px-2 border-l border-r border-eft">
-                      <span className="opacity-75">
+                      <span style={{ color: String(tli.added).match(/^(1|true)$/i) ? '#22C55E' : '#F59E0B' }}>
                       {String(tli.added).match(/^(1|true)$/i) ? " looted " : " dropped "}
                       </span>{" "}
                     </td>

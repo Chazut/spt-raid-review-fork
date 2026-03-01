@@ -210,6 +210,9 @@ public class DatabaseService : IDisposable
                 DROP TABLE player_status;
                 ALTER TABLE player_status_new RENAME TO player_status;
             "),
+            ("add_ballistic_weapon_name", @"
+                ALTER TABLE ballistic ADD COLUMN ""weaponName"" TEXT DEFAULT '';
+            "),
         };
 
         foreach (var (name, sql) in migrations)

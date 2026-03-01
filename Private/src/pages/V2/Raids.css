@@ -99,3 +99,5 @@ tbody tr:nth-child(even) {
 .raid-timeline li {
     list-style: none;
 }
+#raid-timeline tbody tr { transition: background 0.1s; }
+#raid-timeline tbody tr:hover { background: rgba(154,136,102,0.15); }

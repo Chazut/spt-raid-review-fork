@@ -37,6 +37,7 @@ namespace RAID_REVIEW
                     sessionId = RAID_REVIEW.sessionId,
                     profileId = shotResult.PlayerProfileID,
                     weaponId = shotResult.Weapon.Id,
+                    weaponName = shotResult.Weapon.LocalizedShortName(),
                     ammoId = shotResult.Ammo.Id,
                     time = RAID_REVIEW.stopwatch.ElapsedMilliseconds,
                     hitPlayerId = hitPlayerId ?? null,
