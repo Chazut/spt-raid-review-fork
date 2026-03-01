@@ -308,6 +308,38 @@ namespace RAID_REVIEW
                             RR_WildSpawnType = "BTR|OTHER";
                             break;
 
+                        // LABYRINTH
+                        case "bossTagillaAgro":
+                            RR_WildSpawnType = "SHADOW TAGILLA|BOSS";
+                            break;
+                        case "bossKillaAgro":
+                            RR_WildSpawnType = "VENGEFUL KILLA|BOSS";
+                            break;
+                        case "tagillaHelperAgro":
+                            RR_WildSpawnType = "SHADOW TAGILLA GUARD|FOLLOWER";
+                            break;
+                        case "infectedAssault":
+                            RR_WildSpawnType = "INFECTED|INFECTED";
+                            break;
+                        case "infectedPmc":
+                            RR_WildSpawnType = "INFECTED PMC|INFECTED";
+                            break;
+                        case "infectedCivil":
+                            RR_WildSpawnType = "INFECTED CIVILIAN|INFECTED";
+                            break;
+                        case "infectedLaborant":
+                            RR_WildSpawnType = "INFECTED LABORANT|INFECTED";
+                            break;
+                        case "infectedTagilla":
+                            RR_WildSpawnType = "INFECTED TAGILLA|BOSS";
+                            break;
+                        case "spiritWinter":
+                            RR_WildSpawnType = "SPIRIT WINTER|SPECIAL";
+                            break;
+                        case "spiritSpring":
+                            RR_WildSpawnType = "SPIRIT SPRING|SPECIAL";
+                            break;
+
                         // THE MERCENARY
                         case "mercenary":
                             RR_WildSpawnType = "MERCENARY|MERCENARY";

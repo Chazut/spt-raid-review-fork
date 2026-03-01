@@ -46,7 +46,8 @@ function classifyPlayer(player: any): string {
         case 'ROGUE':
         case 'CULT':
         case 'BLOODHOUND':
-        case 'SNIPER': return 'SPECIAL'
+        case 'SNIPER':
+        case 'INFECTED': return 'SPECIAL'
         case 'MERCENARY':
         case 'RUAF':
         case 'UNTAR':
@@ -108,6 +109,12 @@ function getMarkerLabel(player: any): string | null {
     if (type.includes('RUAF')) return 'R'
     if (type.includes('UNTAR')) return 'U'
     if (type.includes('BLACK DIV')) return 'BD'
+
+    // Labyrinth
+    if (type.includes('SHADOW TAGILLA')) return 'ST'
+    if (type.includes('VENGEFUL KILLA')) return 'VK'
+    if (type.includes('INFECTED')) return 'If'
+    if (type.includes('SPIRIT')) return 'Sp'
 
     // Special types
     if (type.includes('RAIDER')) return 'Rd'
@@ -370,12 +377,18 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     const mapData = useMemo(() => {
         const map = allMaps[currentMap]
 
-        if (map && map.layers) {
-            let newAvailableLayers = map.layers.map((x) => ({ name: x.name, value: x.name }))
+        if (map) {
+            let newAvailableLayers = (map.layers || []).map((x) => ({ name: x.name, value: x.name }))
             setAvailableLayers([{ name: 'Base', value: '' }, ...newAvailableLayers])
 
             let newAvailableStyles = [!map.tilePath || { name: 'Satellite', value: 'tile' }, !map.svgPath || { name: 'Map', value: 'svg' }].filter((f) => f)
             serAvailableStyles(newAvailableStyles)
+
+            // Auto-select first available style if current style isn't available
+            setSelectedStyle(prev => {
+                const hasStyle = newAvailableStyles.some((s) => s.value === prev)
+                return hasStyle ? prev : (newAvailableStyles[0]?.value || prev)
+            })
         }
 
         return map
@@ -418,6 +431,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             town: 'town',
             woods: 'woods',
             Woods: 'woods',
+            Labyrinth: 'the-labyrinth',
             base: 'base',
         }
 
@@ -1054,6 +1068,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             if (botMapping.type === 'SNIPER') brainOutput = `Sniper`
             if (botMapping.type === 'PLAYER_SCAV') brainOutput = `${player.mod_SAIN_brain.trim()} - Player Scav`
             if (botMapping.type === 'BLOODHOUND') brainOutput = `Bloodhound`
+            if (botMapping.type === 'INFECTED') brainOutput = `Infected`
 
             return brainOutput
         }
@@ -1120,6 +1135,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 return '#00BFFF' // Light Blue - UNTAR
             case 'BLACKDIV':
                 return '#555555' // Dark Grey - Black Division
+            case 'INFECTED':
+                return '#7FFF00' // Chartreuse - Infected (Labyrinth)
             default:
                 if (player.type === 'PLAYER' && player.team === 'Savage') return '#33FF57' // Green - Scav
                 else return colors[(player.group ?? index) % colors.length] // PMC - color by team group
