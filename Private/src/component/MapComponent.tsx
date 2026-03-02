@@ -713,10 +713,11 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                             }
                         }
                         behaviorCat = getBehaviorCategory(currentDecision)
-                        behaviorLine = behaviorCat ? `<br/><span style="color:${behaviorCat.color}">${behaviorCat.label}</span>: ${formatDecisionLabel(currentDecision)}` : ''
+                        behaviorLine = `<br/><span style="color:${behaviorCat.color}">${behaviorCat.label}</span>${currentDecision ? ': ' + formatDecisionLabel(currentDecision) : ''}`
                     }
                     const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})${behaviorLine}`
-                    const marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, markerOpacity, pmcIndexMap[playerId], tip, behaviorCat?.color)
+                    const ringColor = behaviorCat && behaviorCat.key !== 'idle' && behaviorCat.key !== 'patrol' ? behaviorCat.color : undefined
+                    const marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, markerOpacity, pmcIndexMap[playerId], tip, ringColor)
                     marker._rr_playerId = playerId
                     marker._rr_isDead = false
                     marker._rr_normalOpacity = 1

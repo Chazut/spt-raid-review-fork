@@ -151,11 +151,22 @@ namespace RAID_REVIEW
         private static bool _sainReflectionInit = false;
         private static bool _sainAvailable = false;
         private static Type _sainBotComponentType;
+        private static Type _sainBotControllerType;
         private static PropertyInfo _sainActiveLayerProp;
         private static PropertyInfo _sainDecisionProp;
         private static PropertyInfo _sainCombatDecProp;
         private static PropertyInfo _sainSelfDecProp;
         private static PropertyInfo _sainSquadDecProp;
+        private static PropertyInfo _sainCurrentActionProp;
+        private static PropertyInfo _sainActionNameProp;
+        private static PropertyInfo _sainBotsProp;
+        private static PropertyInfo _sainBotPlayerProp;
+        private static PropertyInfo _sainBotProfileIdProp;
+        private static PropertyInfo _sainMoverProp;
+        private static PropertyInfo _sainMoverMovingProp;
+        private static PropertyInfo _sainMoverSprintProp;
+        private static PropertyInfo _sainStandByProp;
+        private static PropertyInfo _sainLayersActiveProp;
 
         private static void InitSainReflection()
         {
@@ -163,15 +174,19 @@ namespace RAID_REVIEW
             _sainReflectionInit = true;
             try
             {
-                var sainAssembly = AppDomain.CurrentDomain.GetAssemblies()
-                    .FirstOrDefault(a => a.GetName().Name == "SAIN");
-                if (sainAssembly == null) return;
+                _sainBotComponentType = Type.GetType("SAIN.Components.BotComponent, SAIN");
+                _sainBotControllerType = Type.GetType("SAIN.Components.BotManagerComponent, SAIN");
 
-                _sainBotComponentType = sainAssembly.GetType("SAIN.Components.BotComponent");
-                if (_sainBotComponentType == null) return;
+                if (_sainBotComponentType == null)
+                {
+                    LoggerInstance.Log.LogWarning("RAID_REVIEW :::: SAIN :::: BotComponent type not found");
+                    return;
+                }
 
                 _sainActiveLayerProp = _sainBotComponentType.GetProperty("ActiveLayer");
                 _sainDecisionProp = _sainBotComponentType.GetProperty("Decision");
+                _sainCurrentActionProp = _sainBotComponentType.GetProperty("CurrentAction");
+                _sainBotPlayerProp = _sainBotComponentType.GetProperty("Player");
 
                 if (_sainDecisionProp != null)
                 {
@@ -181,57 +196,197 @@ namespace RAID_REVIEW
                     _sainSquadDecProp = decClassType?.GetProperty("CurrentSquadDecision");
                 }
 
+                if (_sainCurrentActionProp != null)
+                {
+                    _sainActionNameProp = _sainCurrentActionProp.PropertyType?.GetProperty("Name");
+                }
+
+                if (_sainBotControllerType != null)
+                {
+                    _sainBotsProp = _sainBotControllerType.GetProperty("Bots");
+                }
+
+                if (_sainBotPlayerProp != null)
+                {
+                    _sainBotProfileIdProp = _sainBotPlayerProp.PropertyType?.GetProperty("ProfileId");
+                }
+
+                // Movement/state properties for peace mode granularity
+                _sainMoverProp = _sainBotComponentType.GetProperty("Mover");
+                _sainStandByProp = _sainBotComponentType.GetProperty("BotInStandBy");
+                _sainLayersActiveProp = _sainBotComponentType.GetProperty("SAINLayersActive");
+
+                if (_sainMoverProp != null)
+                {
+                    var moverType = _sainMoverProp.PropertyType;
+                    _sainMoverMovingProp = moverType?.GetProperty("Moving");
+                    _sainMoverSprintProp = moverType?.GetProperty("SprintController");
+                    // Try "Running" as fallback
+                    if (_sainMoverSprintProp == null)
+                        _sainMoverSprintProp = moverType?.GetProperty("Running");
+                }
+
                 _sainAvailable = true;
+
+                LoggerInstance.Log.LogInfo($"RAID_REVIEW :::: SAIN :::: Reflection init OK — " +
+                    $"Decision={_sainDecisionProp != null}, Combat={_sainCombatDecProp != null}, " +
+                    $"Self={_sainSelfDecProp != null}, Squad={_sainSquadDecProp != null}, " +
+                    $"Action={_sainCurrentActionProp != null}, ActionName={_sainActionNameProp != null}, " +
+                    $"ActiveLayer={_sainActiveLayerProp != null}, " +
+                    $"Controller={_sainBotControllerType != null}, Bots={_sainBotsProp != null}, " +
+                    $"Mover={_sainMoverProp != null}, Moving={_sainMoverMovingProp != null}, " +
+                    $"StandBy={_sainStandByProp != null}, LayersActive={_sainLayersActiveProp != null}");
+            }
+            catch (Exception ex)
+            {
+                LoggerInstance.Log.LogWarning($"RAID_REVIEW :::: SAIN :::: Reflection init failed: {ex.Message}");
+            }
+        }
+
+        // Cache: profileId → SAIN BotComponent (rebuilt each position tick)
+        private static Dictionary<string, object> _sainBotCache = new Dictionary<string, object>();
+
+        private static void RefreshSainBotCache()
+        {
+            _sainBotCache.Clear();
+            try
+            {
+                // Use the already-discovered sainBotController from SAIN_Integration
+                var controller = RAID_REVIEW.sainBotController;
+                if (controller == null || _sainBotsProp == null) return;
+
+                var bots = _sainBotsProp.GetValue(controller);
+                if (bots == null) return;
+
+                var botValues = (IEnumerable)bots.GetType().GetProperty("Values")?.GetValue(bots);
+                if (botValues == null) return;
+
+                foreach (var botComp in botValues)
+                {
+                    try
+                    {
+                        string profileId = null;
+                        if (_sainBotPlayerProp != null)
+                        {
+                            var playerObj = _sainBotPlayerProp.GetValue(botComp);
+                            if (playerObj != null && _sainBotProfileIdProp != null)
+                                profileId = _sainBotProfileIdProp.GetValue(playerObj)?.ToString();
+                        }
+                        if (!string.IsNullOrEmpty(profileId))
+                            _sainBotCache[profileId] = botComp;
+                    }
+                    catch { }
+                }
             }
             catch { }
         }
 
+        private static string ExtractDecisionFromBotComp(object botComp)
+        {
+            if (botComp == null) return null;
+
+            if (_sainDecisionProp != null)
+            {
+                var decisionObj = _sainDecisionProp.GetValue(botComp);
+                if (decisionObj != null)
+                {
+                    // Self decisions (FirstAid, Reload, Surgery, Stims) take priority
+                    if (_sainSelfDecProp != null)
+                    {
+                        var selfDec = _sainSelfDecProp.GetValue(decisionObj)?.ToString();
+                        if (!string.IsNullOrEmpty(selfDec) && selfDec != "None" && selfDec != "0")
+                            return "SAIN:" + selfDec;
+                    }
+
+                    // Combat decisions (Search, StandAndShoot, DogFight, etc.)
+                    if (_sainCombatDecProp != null)
+                    {
+                        var combatDec = _sainCombatDecProp.GetValue(decisionObj)?.ToString();
+                        if (!string.IsNullOrEmpty(combatDec) && combatDec != "None" && combatDec != "0")
+                            return "SAIN:" + combatDec;
+                    }
+
+                    // Squad decisions (Regroup, Suppress, Help, etc.)
+                    if (_sainSquadDecProp != null)
+                    {
+                        var squadDec = _sainSquadDecProp.GetValue(decisionObj)?.ToString();
+                        if (!string.IsNullOrEmpty(squadDec) && squadDec != "None" && squadDec != "0")
+                            return "SAIN:" + squadDec;
+                    }
+                }
+            }
+
+            // CurrentAction.Name
+            if (_sainCurrentActionProp != null && _sainActionNameProp != null)
+            {
+                var actionObj = _sainCurrentActionProp.GetValue(botComp);
+                if (actionObj != null)
+                {
+                    var actionName = _sainActionNameProp.GetValue(actionObj)?.ToString();
+                    if (!string.IsNullOrEmpty(actionName))
+                        return "SAIN:" + actionName;
+                }
+            }
+
+            // Fallback to active layer name (Combat, Peace, Extract, etc.)
+            if (_sainActiveLayerProp != null)
+            {
+                var layer = _sainActiveLayerProp.GetValue(botComp)?.ToString();
+                if (!string.IsNullOrEmpty(layer) && layer != "None" && layer != "0")
+                    return "SAIN:" + layer;
+            }
+
+            // Bot is managed by SAIN but all decisions are "None" — check movement state
+            try
+            {
+                // Check if bot is in AI-limiter standby (not actually doing anything)
+                if (_sainStandByProp != null)
+                {
+                    var standBy = _sainStandByProp.GetValue(botComp);
+                    if (standBy is true)
+                        return "SAIN:standBy";
+                }
+
+                // Check Mover.Moving to distinguish patrol from idle
+                if (_sainMoverProp != null && _sainMoverMovingProp != null)
+                {
+                    var mover = _sainMoverProp.GetValue(botComp);
+                    if (mover != null)
+                    {
+                        var moving = _sainMoverMovingProp.GetValue(mover);
+                        if (moving is true)
+                            return "SAIN:simplePatrol";
+                    }
+                }
+            }
+            catch { }
+
+            // Truly idle — no SAIN decision, not moving
+            return "SAIN:peaceful";
+        }
+
         private static string GetSainDecision(Player player)
         {
-            if (!_sainAvailable || _sainBotComponentType == null) return null;
+            if (!_sainAvailable) return null;
 
             try
             {
-                var botComp = player.gameObject.GetComponent(_sainBotComponentType);
-                if (botComp == null) return null;
-
-                if (_sainDecisionProp != null)
+                // Primary: lookup from BotManagerComponent.Bots dictionary (populated by SAIN_Integration)
+                if (_sainBotCache.TryGetValue(player.ProfileId, out var cachedComp))
                 {
-                    var decisionObj = _sainDecisionProp.GetValue(botComp);
-                    if (decisionObj != null)
-                    {
-                        // Self decisions (FirstAid, Reload, Surgery, Stims) take priority
-                        if (_sainSelfDecProp != null)
-                        {
-                            var selfDec = _sainSelfDecProp.GetValue(decisionObj)?.ToString();
-                            if (!string.IsNullOrEmpty(selfDec) && selfDec != "None" && selfDec != "0")
-                                return "SAIN:" + selfDec;
-                        }
-
-                        // Combat decisions (Search, StandAndShoot, DogFight, etc.)
-                        if (_sainCombatDecProp != null)
-                        {
-                            var combatDec = _sainCombatDecProp.GetValue(decisionObj)?.ToString();
-                            if (!string.IsNullOrEmpty(combatDec) && combatDec != "None" && combatDec != "0")
-                                return "SAIN:" + combatDec;
-                        }
-
-                        // Squad decisions (Regroup, Suppress, Help, etc.)
-                        if (_sainSquadDecProp != null)
-                        {
-                            var squadDec = _sainSquadDecProp.GetValue(decisionObj)?.ToString();
-                            if (!string.IsNullOrEmpty(squadDec) && squadDec != "None" && squadDec != "0")
-                                return "SAIN:" + squadDec;
-                        }
-                    }
+                    var result = ExtractDecisionFromBotComp(cachedComp);
+                    if (result != null) return result;
                 }
 
-                // Fallback to active layer name (Combat, Peace, Extract, etc.)
-                if (_sainActiveLayerProp != null)
+                // Fallback: try GetComponent directly on player's gameObject
+                if (_sainBotComponentType != null)
                 {
-                    var layer = _sainActiveLayerProp.GetValue(botComp)?.ToString();
-                    if (!string.IsNullOrEmpty(layer) && layer != "None" && layer != "0")
-                        return "SAIN:" + layer;
+                    var botComp = player.gameObject.GetComponent(_sainBotComponentType);
+                    if (botComp != null)
+                    {
+                        var result = ExtractDecisionFromBotComp(botComp);
+                        if (result != null) return result;
+                    }
                 }
             }
             catch { }
@@ -344,6 +499,13 @@ namespace RAID_REVIEW
                     // PLAYER TRACKING LOOP
                     IEnumerable<Player> allPlayers = gameWorld.AllPlayersEverExisted;
                     long captureTime = stopwatch.ElapsedMilliseconds;
+
+                    // Refresh SAIN bot cache once per tick (before iterating players)
+                    if (SOLARINT_SAIN__DETECTED)
+                    {
+                        InitSainReflection();
+                        RefreshSainBotCache();
+                    }
                     foreach (Player player in allPlayers)
                     {
 
@@ -451,8 +613,6 @@ namespace RAID_REVIEW
                                 {
                                     try
                                     {
-                                        InitSainReflection();
-
                                         // Try SAIN reflection first for meaningful decision names
                                         var sainDec = GetSainDecision(player);
                                         if (!string.IsNullOrEmpty(sainDec))
@@ -461,12 +621,12 @@ namespace RAID_REVIEW
                                         }
                                         else
                                         {
-                                            // Vanilla fallback — skip BigBrain custom IDs (>= 9000)
+                                            // Vanilla fallback — always send, even BigBrain IDs (frontend maps 9000+)
                                             var botOwner = player.AIData?.BotOwner;
                                             if (botOwner?.Brain != null)
                                             {
                                                 var lastDecision = botOwner.Brain.LastDecision;
-                                                if (lastDecision.HasValue && (int)lastDecision.Value < 9000)
+                                                if (lastDecision.HasValue)
                                                     decision = lastDecision.Value.ToString();
                                             }
                                         }

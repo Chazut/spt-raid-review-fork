@@ -14,6 +14,7 @@ export const BEHAVIOR_CATEGORIES: Record<string, BehaviorCategory> = {
     flee:     { key: 'flee',     label: 'Flee',     color: '#A855F7' },
     extract:  { key: 'extract',  label: 'Extract',  color: '#06B6D4' },
     grenade:  { key: 'grenade',  label: 'Grenade',  color: '#FF6B6B' },
+    idle:     { key: 'idle',     label: 'Idle',     color: '#374151' },
     other:    { key: 'other',    label: 'Other',    color: '#6B7280' },
 }
 
@@ -39,7 +40,7 @@ const DECISION_TO_CATEGORY: Record<string, string> = {
     standBy: 'patrol', peaceful: 'patrol', peaceLook: 'patrol', peaceHardAim: 'patrol',
     // Medical
     heal: 'medical', healStimulators: 'medical', eatDrink: 'medical',
-    repairMalfunction: 'medical', healAnotherTarget: 'medical',
+    repairMalfunction: 'other', healAnotherTarget: 'medical',
     // Loot
     botTakeItem: 'loot', botDropItem: 'loot', deadBody: 'loot', goToLootPointNode: 'loot',
     // Flee
@@ -69,22 +70,22 @@ const DECISION_TO_CATEGORY: Record<string, string> = {
     Help: 'movement', Regroup: 'movement',
 
     // ── SAIN ESelfActionType ──
-    Reload: 'medical', FirstAid: 'medical', Surgery: 'medical', Stims: 'medical',
+    Reload: 'other', FirstAid: 'medical', Surgery: 'medical', Stims: 'medical',
 
     // ── SAIN ESAINLayer (fallback broad categories) ──
     Combat: 'combat', Squad: 'combat', Extract: 'extract',
     Run: 'flee', Peace: 'patrol', AvoidThreat: 'flee',
 
     // ── BigBrain numeric layer IDs (fallback if SAIN reflection fails) ──
-    '9000': 'other',        // SAIN DebugLayer
+    '9000': 'idle',         // SAIN DebugLayer (default/inactive)
     '9001': 'flee',         // SAIN AvoidThreatLayer
     '9002': 'extract',      // SAIN ExtractLayer
     '9003': 'combat',       // SAIN CombatSquadLayer
     '9004': 'combat',       // SAIN CombatSoloLayer
 }
 
-export function getBehaviorCategory(decision: string | undefined | null): BehaviorCategory | null {
-    if (!decision || decision === '') return null
+export function getBehaviorCategory(decision: string | undefined | null): BehaviorCategory {
+    if (!decision || decision === '') return BEHAVIOR_CATEGORIES.idle
     const cleanDecision = decision.startsWith('SAIN:') ? decision.substring(5) : decision
     const categoryKey = DECISION_TO_CATEGORY[cleanDecision] ?? 'other'
     return BEHAVIOR_CATEGORIES[categoryKey]
