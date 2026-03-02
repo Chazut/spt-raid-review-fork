@@ -29,16 +29,22 @@ namespace RAID_REVIEW
                 bool isPackingMagazine = location.Container.ID == "cartridges";
                 if (RAID_REVIEW.LootTracking.Value && !isPackingMagazine)
                 {
+                    var pos = __instance.Position;
                     var lootItem = new TrackingLootItem
                     {
                         sessionId = RAID_REVIEW.sessionId,
                         profileId = __instance.ProfileId,
                         time = RAID_REVIEW.stopwatch.ElapsedMilliseconds,
                         itemId = item.Id,
+                        templateId = item.TemplateId.ToString(),
                         itemName = item.LocalizedShortName(),
+                        price = RAID_REVIEW.GetHandbookPrice(item),
                         qty = item.StackObjectsCount,
                         type = item.QuestItem ? "QUEST_ITEM" : "LOOT",
-                        added = added
+                        added = added,
+                        x = pos.x,
+                        y = pos.y,
+                        z = pos.z
                     };
 
                     if (!added)

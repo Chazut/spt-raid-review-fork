@@ -86,7 +86,7 @@ public class GarbageCollector
 
     private async Task DeleteRaidDataAsync(string raidId)
     {
-        foreach (var table in new[] { "raid", "kills", "looting", "player", "player_status", "ballistic" })
+        foreach (var table in new[] { "raid", "kills", "looting", "player", "player_status", "ballistic", "loose_loot", "player_inventory" })
         {
             await _db.ExecuteAsync($"DELETE FROM {table} WHERE raidId = $raidId",
                 ("$raidId", raidId));

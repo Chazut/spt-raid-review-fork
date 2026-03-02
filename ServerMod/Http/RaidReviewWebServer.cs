@@ -279,6 +279,7 @@ public class RaidReviewWebServer
                 var players = await _db.QueryAsync("SELECT * FROM player WHERE raidId = $id", ("$id", raidId));
                 var statuses = await _db.QueryAsync("SELECT * FROM player_status WHERE raidId = $id", ("$id", raidId));
                 var ballistics = await _db.QueryAsync("SELECT * FROM ballistic WHERE raidId = $id", ("$id", raidId));
+                var playerInventory = await _db.QueryAsync("SELECT * FROM player_inventory WHERE raidId = $id", ("$id", raidId));
 
                 var hasCompiledPositions = _fileService.FileExists("positions", "", "", $"{raidId}_{_compiler.ActiveVersion}_positions.json");
                 var hasRawPositions = _fileService.FileExists("positions", "", "", $"{raidId}_positions");
@@ -301,6 +302,7 @@ public class RaidReviewWebServer
                 result["players"] = players;
                 result["player_status"] = statuses;
                 result["ballistic"] = ballistics;
+                result["player_inventory"] = playerInventory;
                 result["positionsTracked"] = positionsTracked;
                 await context.Response.WriteAsJsonAsync(result);
             }
@@ -328,6 +330,20 @@ public class RaidReviewWebServer
             else
             {
                 await context.Response.WriteAsJsonAsync(new object[] { });
+            }
+        });
+
+        app.MapGet("/api/raids/{raidId}/loose_loot", async (HttpContext context, string raidId) =>
+        {
+            try
+            {
+                var data = await _db.QueryAsync("SELECT * FROM loose_loot WHERE raidId = $id", ("$id", raidId));
+                await context.Response.WriteAsJsonAsync(data);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("[API:LOOSE_LOOT]", ex);
+                context.Response.StatusCode = 500;
             }
         });
 
@@ -386,7 +402,7 @@ public class RaidReviewWebServer
 
             foreach (var raidId in raidIds)
             {
-                foreach (var table in new[] { "raid", "kills", "looting", "player", "player_status", "ballistic" })
+                foreach (var table in new[] { "raid", "kills", "looting", "player", "player_status", "ballistic", "loose_loot", "player_inventory" })
                     await _db.ExecuteAsync($"DELETE FROM {table} WHERE raidId = $id", ("$id", raidId));
 
                 _fileService.DeleteFile("positions", "", "", $"{raidId}_positions");

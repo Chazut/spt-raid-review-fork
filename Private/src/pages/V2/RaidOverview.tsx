@@ -54,14 +54,20 @@ function needsDarkText(hex: string): boolean {
     return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5;
 }
 
-type SortKey = 'lvl' | 'kills' | 'lootings' | 'accuracy' | null;
+type SortKey = 'lvl' | 'kills' | 'lootings' | 'lootedValue' | 'spawnValue' | 'accuracy' | null;
+
+function formatCompactNumber(n: number): string {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(0)}K`;
+    return String(n);
+}
 type SortDir = 'asc' | 'desc';
 
 export default function RaidOverview() {
     const { raid, intl: intl_dir_ot } = useOutletContext() as { raid: TrackingRaidData, intl: { [key:string] : string } };
 
 
-    const [ calcStats, setCalcStats ] = useState(null as null | Map<string, { kills: number, lootings: number, accuracy: number }>);
+    const [ calcStats, setCalcStats ] = useState(null as null | Map<string, { kills: number, lootings: number, lootedValue: number, spawnValue: number, accuracy: number }>);
     const [ raidSummary, setRaidSummary ] = useState([] as { title: string; value: any;}[]);
     const [ groupedByType, setGroupedByType ] = useState('TEAM' as string);
     const [ groupedBy, setGroupedBy ] = useState([] as TrackingRaidDataPlayers[][]);
@@ -136,6 +142,15 @@ export default function RaidOverview() {
           let lootingsRemoved = _.filter(filteredLoot, (looter) => looter.profileId === player.profileId && String(looter.added).match(/^(0|false)$/i)).length;
           let lootings = lootingsAdded - lootingsRemoved;
 
+          // Looted value: sum of (price × qty) for added items minus dropped items
+          let lootedValue = 0;
+          for (const loot of filteredLoot) {
+            if (loot.profileId !== player.profileId) continue;
+            const price = Number(loot.price) || 0;
+            const qty = Number(loot.qty) || 1;
+            const isAdded = String(loot.added).match(/^(1|true)$/i);
+            lootedValue += isAdded ? price * qty : -(price * qty);
+          }
 
           let allShots = _.filter(raid.ballistic, (shot) => shot.profileId === player.profileId).length;
           let hitShots = _.filter(raid.ballistic, (shot) => shot.profileId === player.profileId && shot.hitPlayerId).length
@@ -145,9 +160,22 @@ export default function RaidOverview() {
             accuracy = 0;
           }
 
+          // Bot spawn value from player_inventory (exclude non-lootable slots: main, SecuredContainer)
+          let spawnValue = 0;
+          if (raid.player_inventory) {
+            for (const inv of raid.player_inventory) {
+              if (inv.profileId !== player.profileId) continue;
+              const slot = inv.slot || '';
+              if (/^(main|SecuredContainer)$/i.test(slot)) continue;
+              spawnValue += (Number(inv.price) || 0) * (Number(inv.qty) || 1);
+            }
+          }
+
           calculatedStats.set(player.profileId, {
             kills,
             lootings,
+            lootedValue,
+            spawnValue,
             accuracy
           })
         }
@@ -424,6 +452,12 @@ export default function RaidOverview() {
                 <td className="text-right p-2 capitalize">{raid.detectedMods?.match(/SAIN/gi) ? SAIN : ''}</td>
                 <td className="text-center p-2 w-12 border-l border-eft">{stats ? stats.kills || '-' : null}</td>
                 <td className={`text-center p-2 w-12 ${(stats && stats.lootings < 0) ? 'text-red-400' : 'text-green-400'}`}>{stats ? stats.lootings || '-' : null}</td>
+                <td className={`text-center p-2 w-16 text-xs ${stats && stats.lootedValue < 0 ? 'text-red-400' : 'text-yellow-400'}`}>
+                  {stats ? (stats.lootedValue ? formatCompactNumber(stats.lootedValue) : '-') : null}
+                </td>
+                <td className="text-center p-2 w-16 text-xs text-orange-300">
+                  {stats ? (stats.spawnValue ? formatCompactNumber(stats.spawnValue) : '-') : null}
+                </td>
                 <td className="text-center p-2 w-24">
                   {stats ? (
                     <div className="flex items-center justify-center gap-1">
@@ -462,7 +496,7 @@ export default function RaidOverview() {
         <section className="mt-4">
             <div className="w-full flex flex-row justify-between items-center">
               <span className="text-lg font-bold">Leaderboard</span>
-              <span className="text-sm opacity-70">Click row to show kills | Sort by Lvl, K, L, A%</span>
+              <span className="text-sm opacity-70">Click row to show kills | Sort by Lvl, K, L, V, SV, A%</span>
             </div>
             <table id="raid-leaderboard" className="mb-2 w-full border border-eft">
                 <thead>
@@ -475,12 +509,14 @@ export default function RaidOverview() {
                         <th className="text-right px-2">{raid.detectedMods?.match(/SAIN/gi) ? 'SAIN' : ''}</th>
                         <th className="text-center px-2 cursor-pointer hover:bg-black/10" title="Kills" onClick={() => handleSort('kills')}>K{sortIndicator('kills')}</th>
                         <th className="text-center px-2 cursor-pointer hover:bg-black/10" title="Looted items" onClick={() => handleSort('lootings')}>L{sortIndicator('lootings')}</th>
+                        <th className="text-center px-2 cursor-pointer hover:bg-black/10" title="Looted value (₽)" onClick={() => handleSort('lootedValue')}>V{sortIndicator('lootedValue')}</th>
+                        <th className="text-center px-2 cursor-pointer hover:bg-black/10" title="Spawn value (₽)" onClick={() => handleSort('spawnValue')}>SV{sortIndicator('spawnValue')}</th>
                         <th className="text-center px-2 cursor-pointer hover:bg-black/10" title="Accuracy" onClick={() => handleSort('accuracy')}>A%{sortIndicator('accuracy')}</th>
                         <th className={`text-right px-2 underline cursor-pointer ${groupedByType === '' ? 'bg-black text-eft' : ''}`} onClick={() => setGroupedByType('')}>Spawned</th>
                     </tr>
                 </thead>
                 <tbody>
-                    {generatePlayerTable(raid) || <tr><td colSpan={10}>No Data.</td></tr>}
+                    {generatePlayerTable(raid) || <tr><td colSpan={12}>No Data.</td></tr>}
                 </tbody>
             </table>
         </section>

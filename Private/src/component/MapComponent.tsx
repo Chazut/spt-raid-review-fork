@@ -12,7 +12,7 @@ import api from '../api/api.js';
 import { msToHMS, intl } from '../helpers/index.js';
 import { calculateNewPosition, findInsertIndex } from '../modules/utils.js'
 import { useMapImages } from '../modules/maps-index.js';
-import { TrackingPositionalData } from '../types/api_types.js';
+import { TrackingPositionalData, TrackingLooseLootItem, TrackingPlayerInventoryItem } from '../types/api_types.js';
 import { PlayerSlider } from './MapPlayerSlider.js';
 
 import BotMapping from '../assets/botMapping.json'
@@ -82,6 +82,20 @@ function getTooltipIconHtml(player: any, color: string, pmcIdx?: number): string
         return `<span style="display:inline-block;width:12px;height:12px;border-radius:50%;background:${color};text-align:center;font-size:7px;font-weight:bold;color:#fff;line-height:12px;vertical-align:middle;margin-right:3px;border:1px solid rgba(255,255,255,0.6);">${pmcIdx}</span>`
     }
     return `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};vertical-align:middle;margin-right:3px;"></span>`
+}
+
+function formatCompactNumber(value: number): string {
+    if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`
+    if (value >= 1_000) return `${(value / 1_000).toFixed(0)}K`
+    return String(value)
+}
+
+function getLootPriceColor(totalPrice: number): string {
+    if (totalPrice >= 500_000) return '#FFD700'  // gold
+    if (totalPrice >= 100_000) return '#A855F7'  // purple
+    if (totalPrice >= 50_000) return '#3B82F6'   // blue
+    if (totalPrice >= 10_000) return '#94A3B8'   // light slate (brighter than old gray)
+    return '#64748B'                              // slate
 }
 
 function createPlayerMarker(latlng: any, color: string, player: any, proportionalScale: number, opacity: number = 1, pmcIndex?: number, tooltipText?: string, behaviorColor?: string | null): L.Layer {
@@ -265,6 +279,53 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     const [hideBallistics, setHideBallistics] = useState(false)
     const [hideNerdStats, setHideNerdStats] = useState(true)
     const [preserveHistory, setPreserveHistory] = useState(false)
+
+    // Loose Loot
+    const [showLooseLoot, setShowLooseLoot] = useState(true)
+    const [looseLootMinPrice, setLooseLootMinPrice] = useState<number>(() => {
+        const saved = localStorage.getItem('rr_looseLoot_minPrice')
+        return saved ? Number(saved) : 50000
+    })
+    const [looseLootFilter, setLooseLootFilter] = useState<'all' | 'ground' | 'container'>(() => {
+        const saved = localStorage.getItem('rr_looseLoot_filter')
+        return (saved === 'ground' || saved === 'container') ? saved : 'all'
+    })
+    const [looseLootData, setLooseLootData] = useState<TrackingLooseLootItem[]>([])
+    const [looseLootCollapsed, setLooseLootCollapsed] = useState(true)
+    const looseLootLayerRef = useRef<L.LayerGroup | null>(null)
+    const looseLootHighlightRef = useRef<L.CircleMarker | null>(null)
+
+    // Bot Inventory
+    const [botInvCollapsed, setBotInvCollapsed] = useState(true)
+    const [selectedBotProfileId, setSelectedBotProfileId] = useState<string>('')
+    const [collapsedSlots, setCollapsedSlots] = useState<Record<string, boolean>>({})
+    const toggleSlotCollapse = (slot: string) => setCollapsedSlots(prev => ({ ...prev, [slot]: !prev[slot] }))
+
+    const highlightLooseLootItem = useCallback((item: TrackingLooseLootItem | null) => {
+        if (looseLootHighlightRef.current && MAP) {
+            MAP.removeLayer(looseLootHighlightRef.current)
+            looseLootHighlightRef.current = null
+        }
+        if (!item || !MAP) return
+        const tp = item.price * item.qty
+        const color = getLootPriceColor(tp)
+        const isC = item.inContainer === true || item.inContainer === 1
+        const ring = L.circleMarker([item.z, item.x], {
+            radius: 14,
+            color: '#fff',
+            weight: 2,
+            fillColor: color,
+            fillOpacity: 0.4,
+            interactive: false,
+        })
+        ring.bindTooltip(
+            `<span style="color:${color}">${isC ? '\u25A0' : '\u25C6'}</span> ${item.itemName}${item.qty > 1 ? ' x' + item.qty : ''} \u2014 \u20BD${tp.toLocaleString()}`,
+            { direction: 'top', offset: [0, -14], className: 'player-tooltip player-tooltip-html', permanent: true }
+        )
+        ring.addTo(MAP)
+        ring.openTooltip()
+        looseLootHighlightRef.current = ring
+    }, [MAP])
 
     // Events
     const [events, setEvents] = useState([])
@@ -1104,6 +1165,388 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         return () => clearInterval(interval)
     }, [playing, sliderTimes, playbackSpeed, timeCurrentIndex, preserveHistory])
 
+    // Loose Loot: fetch data lazily when toggled on
+    useEffect(() => {
+        if (!showLooseLoot) return
+        if (looseLootData.length > 0) return // already cached
+        ;(async () => {
+            const data = await api.getRaidLooseLoot(raidId)
+            if (data && data.length > 0) {
+                setLooseLootData(data as TrackingLooseLootItem[])
+            }
+        })()
+    }, [showLooseLoot, raidId])
+
+    // Loose Loot: persist settings to localStorage
+    useEffect(() => {
+        localStorage.setItem('rr_looseLoot_minPrice', String(looseLootMinPrice))
+    }, [looseLootMinPrice])
+    useEffect(() => {
+        localStorage.setItem('rr_looseLoot_filter', looseLootFilter)
+    }, [looseLootFilter])
+
+    // Build set of picked-up item IDs before current timeline position
+    const pickedUpItemIds = useMemo(() => {
+        const ids = new Set<string>()
+        if (!raidData?.looting) return ids
+        for (const loot of raidData.looting) {
+            const added = loot.added === 'True' || loot.added === 'true' || loot.added === '1'
+            if (added && Number(loot.time) <= timeEndLimit) {
+                const iid = loot.itemId || loot.id
+                if (iid) ids.add(iid)
+            }
+        }
+        return ids
+    }, [raidData?.looting, timeEndLimit])
+
+    // Loose Loot: render / update markers on map (timeline-aware + container grouping)
+    useEffect(() => {
+        if (!MAP || !mapIsReady) return
+
+        // Remove old layer group
+        if (looseLootLayerRef.current) {
+            MAP.removeLayer(looseLootLayerRef.current)
+            looseLootLayerRef.current = null
+        }
+
+        if (!showLooseLoot || looseLootData.length === 0) return
+
+        const group = L.layerGroup()
+
+        // Separate ground items and container items
+        const groundItems: TrackingLooseLootItem[] = []
+        const containerGroups: Record<string, TrackingLooseLootItem[]> = {}
+
+        for (const item of looseLootData) {
+            // Skip items picked up before current time
+            if (item.itemId && pickedUpItemIds.has(item.itemId)) continue
+
+            const totalPrice = item.price * item.qty
+            if (totalPrice < looseLootMinPrice) continue
+
+            const isContainer = item.inContainer === true || item.inContainer === 1
+            if (looseLootFilter === 'ground' && isContainer) continue
+            if (looseLootFilter === 'container' && !isContainer) continue
+
+            if (isContainer) {
+                const key = `${item.x},${item.y},${item.z}`
+                if (!containerGroups[key]) containerGroups[key] = []
+                containerGroups[key].push(item)
+            } else {
+                groundItems.push(item)
+            }
+        }
+
+        // Render ground items as circleMarkers (SVG — much lighter than divIcon DOM elements)
+        for (const item of groundItems) {
+            const totalPrice = item.price * item.qty
+            const color = getLootPriceColor(totalPrice)
+            const marker = L.circleMarker([item.z, item.x], {
+                radius: 4,
+                color: 'rgba(255,255,255,0.7)',
+                weight: 1,
+                fillColor: color,
+                fillOpacity: 0.9,
+                interactive: true,
+            })
+            marker.bindTooltip(
+                `<span style="color:${color}">\u25C6</span> ${item.itemName}${item.qty > 1 ? ' x' + item.qty : ''} \u2014 \u20BD${totalPrice.toLocaleString()}`,
+                { direction: 'top', offset: [0, -8], className: 'player-tooltip player-tooltip-html' }
+            )
+            marker._rr_looseLoot = true
+            group.addLayer(marker)
+        }
+
+        // Render container groups as circleMarkers with tooltip listing contents
+        for (const [, items] of Object.entries(containerGroups)) {
+            const containerTotal = items.reduce((sum, i) => sum + i.price * i.qty, 0)
+            const color = getLootPriceColor(containerTotal)
+            const first = items[0]
+            const cName = first.containerName || 'Container'
+
+            let tooltipHtml = `<span style="color:${color}">\u25A0</span> <strong>${cName}</strong> (${items.length}) \u2014 \u20BD${containerTotal.toLocaleString()}<div style="margin-top:3px;border-top:1px solid rgba(255,255,255,0.2);padding-top:3px;">`
+            for (const item of items.sort((a, b) => (b.price * b.qty) - (a.price * a.qty))) {
+                const tp = item.price * item.qty
+                tooltipHtml += `<div style="font-size:10px;"><span style="color:${getLootPriceColor(tp)}">${item.itemName}</span>${item.qty > 1 ? ' x' + item.qty : ''} \u20BD${tp.toLocaleString()}</div>`
+            }
+            tooltipHtml += '</div>'
+
+            const marker = L.circleMarker([first.z, first.x], {
+                radius: 5,
+                color: color,
+                weight: 1.5,
+                fillColor: color + '44',
+                fillOpacity: 1,
+                interactive: true,
+            })
+            marker.bindTooltip(tooltipHtml, { direction: 'top', offset: [0, -8], className: 'player-tooltip player-tooltip-html' })
+            marker._rr_looseLoot = true
+            group.addLayer(marker)
+        }
+
+        // Render dropped items (from looting events with added=false and position data)
+        if (raidData?.looting && looseLootFilter !== 'container') {
+            // Build set of itemIds that were picked back up before current timeline
+            const rePickedIds = new Set<string>()
+            for (const loot of raidData.looting) {
+                const isAdded = loot.added === 'True' || loot.added === 'true' || loot.added === '1'
+                if (isAdded && Number(loot.time) <= timeEndLimit) {
+                    const iid = loot.itemId || loot.id
+                    if (iid) rePickedIds.add(iid)
+                }
+            }
+
+            for (const loot of raidData.looting) {
+                const added = loot.added === 'True' || loot.added === 'true' || loot.added === '1'
+                if (added) continue
+                if (Number(loot.time) > timeEndLimit) continue
+                // Skip if this item was picked back up before current time
+                const iid = loot.itemId || loot.id
+                if (iid && rePickedIds.has(iid)) continue
+                const lx = Number(loot.x), lz = Number(loot.z)
+                if (!lx && !lz) continue // no position data (old raids)
+                const tp = (Number(loot.price) || 0) * (Number(loot.qty) || 1)
+                if (tp < looseLootMinPrice) continue
+                const color = getLootPriceColor(tp)
+                const marker = L.circleMarker([lz, lx], {
+                    radius: 4,
+                    color: '#fff',
+                    weight: 1,
+                    fillColor: color,
+                    fillOpacity: 0.9,
+                    interactive: true,
+                    dashArray: '3 2',
+                })
+                marker.bindTooltip(
+                    `<span style="color:${color}">\u2B25</span> ${loot.itemName || loot.name}${Number(loot.qty) > 1 ? ' x' + loot.qty : ''} \u2014 \u20BD${tp.toLocaleString()} <span style="opacity:0.5">(dropped)</span>`,
+                    { direction: 'top', offset: [0, -8], className: 'player-tooltip player-tooltip-html' }
+                )
+                marker._rr_looseLoot = true
+                group.addLayer(marker)
+            }
+        }
+
+        group.addTo(MAP)
+        looseLootLayerRef.current = group
+
+        return () => {
+            if (looseLootLayerRef.current && MAP) {
+                MAP.removeLayer(looseLootLayerRef.current)
+                looseLootLayerRef.current = null
+            }
+        }
+    }, [MAP, mapIsReady, showLooseLoot, looseLootData, looseLootMinPrice, looseLootFilter, pickedUpItemIds, raidData?.looting, timeEndLimit])
+
+    // Compute filtered loot stats (timeline-aware)
+    const looseLootStats = useMemo(() => {
+        if (looseLootData.length === 0) return { shown: 0, total: 0, ground: 0, container: 0 }
+        let ground = 0
+        let container = 0
+        let shown = 0
+        for (const item of looseLootData) {
+            if (item.itemId && pickedUpItemIds.has(item.itemId)) continue
+            const isContainer = item.inContainer === true || item.inContainer === 1
+            if (isContainer) container++
+            else ground++
+            const totalPrice = item.price * item.qty
+            if (totalPrice < looseLootMinPrice) continue
+            if (looseLootFilter === 'ground' && isContainer) continue
+            if (looseLootFilter === 'container' && !isContainer) continue
+            shown++
+        }
+        return { shown, total: looseLootData.length, ground, container }
+    }, [looseLootData, looseLootMinPrice, looseLootFilter, pickedUpItemIds])
+
+    // Slots that are not lootable (excluded from value totals)
+    const NON_LOOTABLE_SLOTS = /^(main|SecuredContainer)$/i
+
+    // Compute bot spawn values from player_inventory (exclude non-lootable slots)
+    const botSpawnValues = useMemo(() => {
+        const values: Record<string, number> = {}
+        if (raidData.player_inventory) {
+            for (const item of raidData.player_inventory) {
+                if (NON_LOOTABLE_SLOTS.test(item.slot || '')) continue
+                if (!values[item.profileId]) values[item.profileId] = 0
+                values[item.profileId] += item.price * item.qty
+            }
+        }
+        return values
+    }, [raidData.player_inventory])
+
+    // Bots with inventory data (for inspector dropdown)
+    const botsWithInventory = useMemo(() => {
+        if (!raidData.player_inventory || !raidData.players) return []
+        const profileIds = new Set(raidData.player_inventory.map(i => i.profileId))
+        return raidData.players.filter(p => profileIds.has(p.profileId))
+    }, [raidData.player_inventory, raidData.players])
+
+    // Equipment-level slot display order
+    const EQUIPMENT_SLOT_ORDER = [
+        'FirstPrimaryWeapon', 'SecondPrimaryWeapon', 'Holster', 'Scabbard',
+        'Headwear', 'Earpiece', 'FaceCover', 'ArmorVest', 'TacticalVest',
+        'Pockets', 'Backpack', 'SecuredContainer', 'ArmBand',
+        'SpecialSlot1', 'SpecialSlot2', 'SpecialSlot3',
+    ]
+    const WEAPON_SLOTS = new Set(['FirstPrimaryWeapon', 'SecondPrimaryWeapon', 'Holster', 'Scabbard'])
+
+    // Slot grouping rules: pattern → parent group name
+    const SLOT_GROUP_RULES: { pattern: RegExp; name: string }[] = [
+        { pattern: /^mod_|^cartridges$|^patron_in_weapon$/i, name: '__weapon_att__' },
+        { pattern: /^helmet_/i, name: 'Helmet parts' },
+        { pattern: /^soft_armor_/i, name: 'Soft armor parts' },
+        { pattern: /^heavy_armor_/i, name: 'Heavy armor parts' },
+        { pattern: /_plate$/i, name: 'Armor plates' },
+        { pattern: /^pocket/i, name: '__merge_Pockets__' },  // merge into Pockets equipment slot
+    ]
+    // Slots to completely hide
+    const HIDDEN_SLOT = /^(\d+|[0-9a-f]{20,}|Default Inventory|unknown|camora_|GridView)/i
+
+    // Selected bot inventory: equipment groups + weapon attachments nested under weapons
+    interface InvSubGroup { name: string; items: TrackingPlayerInventoryItem[]; total: number }
+    interface InvSlotGroup { name: string; items: TrackingPlayerInventoryItem[]; total: number; attachments?: InvSubGroup; subGroups?: InvSubGroup[] }
+    const selectedBotInventory = useMemo(() => {
+        if (!selectedBotProfileId || !raidData.player_inventory) return { slots: [] as InvSlotGroup[], total: 0 }
+        const items = raidData.player_inventory.filter(i => i.profileId === selectedBotProfileId)
+
+        const equipmentGroups: Record<string, TrackingPlayerInventoryItem[]> = {}
+        const weaponAttachments: TrackingPlayerInventoryItem[] = []
+        const groupedSlots: Record<string, TrackingPlayerInventoryItem[]> = {}  // helmet_*, soft_armor_*, etc.
+        let total = 0
+
+        for (const item of items) {
+            const slot = item.slot || 'unknown'
+            const val = item.price * item.qty
+            // Exclude non-lootable slots from total
+            if (!NON_LOOTABLE_SLOTS.test(slot)) total += val
+
+            // Hidden slots
+            if (HIDDEN_SLOT.test(slot)) continue
+
+            // Check grouping rules
+            let matched = false
+            for (const rule of SLOT_GROUP_RULES) {
+                if (rule.pattern.test(slot)) {
+                    if (rule.name === '__weapon_att__') {
+                        weaponAttachments.push(item)
+                    } else if (rule.name.startsWith('__merge_') && rule.name.endsWith('__')) {
+                        // Merge directly into the target equipment slot
+                        const targetSlot = rule.name.slice(8, -2) // "__merge_Pockets__" → "Pockets"
+                        if (!equipmentGroups[targetSlot]) equipmentGroups[targetSlot] = []
+                        equipmentGroups[targetSlot].push(item)
+                    } else {
+                        if (!groupedSlots[rule.name]) groupedSlots[rule.name] = []
+                        groupedSlots[rule.name].push(item)
+                    }
+                    matched = true
+                    break
+                }
+            }
+            if (matched) continue
+
+            // Equipment-level slot
+            if (!equipmentGroups[slot]) equipmentGroups[slot] = []
+            equipmentGroups[slot].push(item)
+        }
+
+        // Build ordered slot groups
+        const slots: InvSlotGroup[] = []
+        const usedSlots = new Set<string>()
+
+        // Add in preferred order first
+        for (const slotName of EQUIPMENT_SLOT_ORDER) {
+            if (equipmentGroups[slotName]) {
+                const grpItems = equipmentGroups[slotName]
+                const grpTotal = grpItems.reduce((s, i) => s + i.price * i.qty, 0)
+                const group: InvSlotGroup = { name: slotName, items: grpItems, total: grpTotal }
+
+                // Attach weapon accessories to first weapon slot that has items
+                if (WEAPON_SLOTS.has(slotName) && weaponAttachments.length > 0 && !usedSlots.has('__att__')) {
+                    const weaponName = grpItems[0]?.itemName || slotName
+                    const attTotal = weaponAttachments.reduce((s, i) => s + i.price * i.qty, 0)
+                    group.attachments = { name: weaponName, items: weaponAttachments, total: attTotal }
+                    usedSlots.add('__att__')
+                }
+
+                // Attach grouped sub-slots (helmet_*, armor, plates, pockets) to their parent equipment slot
+                const subGroups: InvSubGroup[] = []
+                const armorParents: Record<string, string[]> = {
+                    'Headwear': ['Helmet parts'],
+                    'ArmorVest': ['Soft armor parts', 'Heavy armor parts', 'Armor plates'],
+                    'TacticalVest': ['Soft armor parts', 'Heavy armor parts', 'Armor plates'],
+                }
+                const parentGroupNames = armorParents[slotName]
+                if (parentGroupNames) {
+                    for (const gn of parentGroupNames) {
+                        if (groupedSlots[gn] && groupedSlots[gn].length > 0) {
+                            const sgTotal = groupedSlots[gn].reduce((s, i) => s + i.price * i.qty, 0)
+                            subGroups.push({ name: gn, items: groupedSlots[gn], total: sgTotal })
+                            delete groupedSlots[gn]
+                        }
+                    }
+                }
+                if (subGroups.length > 0) group.subGroups = subGroups
+
+                slots.push(group)
+                usedSlots.add(slotName)
+            }
+        }
+
+        // Add any remaining equipment slots not in the predefined order
+        for (const slotName of Object.keys(equipmentGroups)) {
+            if (usedSlots.has(slotName)) continue
+            const grpItems = equipmentGroups[slotName]
+            const grpTotal = grpItems.reduce((s, i) => s + i.price * i.qty, 0)
+            const group: InvSlotGroup = { name: slotName, items: grpItems, total: grpTotal }
+            slots.push(group)
+        }
+
+        // Add any remaining grouped slots that didn't attach to a parent
+        for (const [gn, gItems] of Object.entries(groupedSlots)) {
+            if (gItems.length === 0) continue
+            const gTotal = gItems.reduce((s, i) => s + i.price * i.qty, 0)
+            slots.push({ name: gn, items: gItems, total: gTotal })
+        }
+
+        // For 'main' slot: group duplicates by templateId
+        for (const group of slots) {
+            if (group.name === 'main') {
+                const merged: Record<string, TrackingPlayerInventoryItem> = {}
+                for (const item of group.items) {
+                    const key = item.templateId || item.itemName
+                    if (merged[key]) {
+                        merged[key] = { ...merged[key], qty: merged[key].qty + item.qty }
+                    } else {
+                        merged[key] = { ...item }
+                    }
+                }
+                group.items = Object.values(merged)
+            }
+        }
+
+        return { slots, total }
+    }, [selectedBotProfileId, raidData.player_inventory])
+
+    // Reset collapsed slots when bot changes
+    useEffect(() => {
+        if (!selectedBotProfileId) return
+        const defaults: Record<string, boolean> = {}
+        for (const group of selectedBotInventory.slots) {
+            // Collapse: SecondPrimaryWeapon, main
+            defaults[group.name] = group.name === 'SecondPrimaryWeapon' || group.name === 'main'
+            // Weapon attachments always collapsed by default
+            if (group.attachments) {
+                defaults[`${group.name}__att`] = true
+            }
+            // Sub-groups collapsed by default
+            if (group.subGroups) {
+                for (const sg of group.subGroups) {
+                    defaults[`${group.name}__${sg.name}`] = true
+                }
+            }
+        }
+        setCollapsedSlots(defaults)
+    }, [selectedBotProfileId])
+
     function clearMap(m, timeRange) {
         if (!m || !mapIsReady) return;
     
@@ -1325,6 +1768,9 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                                             <span className="capitalize">
                                                                                 {intl(getDisplayName(player), intl_dir)} ({getPlayerDifficultyAndBrain(player)})
                                                                             </span>
+                                                                            {botSpawnValues[player.profileId] > 0 && (
+                                                                                <span style={{ fontSize: '9px', opacity: 0.5, marginLeft: '4px' }}>{'\u20BD'}{formatCompactNumber(botSpawnValues[player.profileId])}</span>
+                                                                            )}
                                                                         </div>
                                                                     </div>
                                                                     {followPlayer === player.profileId ? <span className="text-xs">[FOLLOWING]</span> : ''}
@@ -1386,6 +1832,9 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                                             <span className="capitalize">
                                                                                 {intl(getDisplayName(player), intl_dir)} ({getPlayerDifficultyAndBrain(player)})
                                                                             </span>
+                                                                            {botSpawnValues[player.profileId] > 0 && (
+                                                                                <span style={{ fontSize: '9px', opacity: 0.5, marginLeft: '4px' }}>{'\u20BD'}{formatCompactNumber(botSpawnValues[player.profileId])}</span>
+                                                                            )}
                                                                         </div>
                                                                     </div>
                                                                     {followPlayer === player.profileId ? <span className="text-xs">[FOLLOWING]</span> : ''}
@@ -1430,6 +1879,9 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                                 <span className="capitalize">
                                                                     {intl(getDisplayName(player), intl_dir)} ({getPlayerDifficultyAndBrain(player)})
                                                                 </span>
+                                                                {botSpawnValues[player.profileId] > 0 && (
+                                                                    <span style={{ fontSize: '9px', opacity: 0.5, marginLeft: '4px' }}>{'\u20BD'}{formatCompactNumber(botSpawnValues[player.profileId])}</span>
+                                                                )}
                                                             </div>
                                                         </div>
                                                         {followPlayer === player.profileId ? <span className="text-xs">[FOLLOWING]</span> : ''}
@@ -1442,21 +1894,22 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                             })
                         })()}
                         {showBehavior && <div className="mt-4" style={{ borderTop: '1px solid rgba(154, 136, 102, 0.3)', paddingTop: '8px' }}>
-                            <strong style={{ fontSize: '12px' }}>Bot Behavior</strong>
+                            <strong style={{ fontSize: '13px' }}>Bot Behavior</strong>
                             <div style={{ marginTop: '4px' }}>
                                 {Object.values(BEHAVIOR_CATEGORIES).map(cat => (
-                                    <div key={cat.key} className="flex items-center" style={{ padding: '1px 0', fontSize: '11px' }}>
-                                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: cat.color, marginRight: 6, flexShrink: 0, display: 'inline-block', boxShadow: `0 0 4px ${cat.color}` }}></span>
+                                    <div key={cat.key} className="flex items-center" style={{ padding: '2px 0', fontSize: '12px' }}>
+                                        <span style={{ width: 10, height: 10, borderRadius: '50%', background: cat.color, marginRight: 6, flexShrink: 0, display: 'inline-block', boxShadow: `0 0 4px ${cat.color}` }}></span>
                                         <span>{cat.label}</span>
                                     </div>
                                 ))}
                             </div>
                             {!raidData?.detectedMods?.match(/SAIN/gi) && (
-                                <div style={{ marginTop: '6px', fontSize: '9px', color: '#F59E0B', opacity: 0.7 }}>
+                                <div style={{ marginTop: '6px', fontSize: '11px', color: '#F59E0B', opacity: 0.7 }}>
                                     SAIN recommended for detailed behavior data
                                 </div>
                             )}
                         </div>}
+
                     </div>
                 </aside>
                 <div className="map-wrapper border border-eft map">
@@ -1509,6 +1962,250 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                     </div>
                     <div id="leaflet-map" ref={onMapContainerRefChange} className={'leaflet-map-container'} />
                 </div>
+                <aside className="sidebar-right border border-eft ml-3 p-3 overflow-x-auto">
+                    <div className="playerfeed text-eft">
+                        {/* ── Loose Loot Section ── */}
+                        <div>
+                            <div
+                                className="flex items-center cursor-pointer"
+                                style={{ fontSize: '14px' }}
+                                onClick={() => setLooseLootCollapsed(!looseLootCollapsed)}
+                            >
+                                <span style={{ marginRight: '4px', fontSize: '9px' }}>{looseLootCollapsed ? '\u25B6' : '\u25BC'}</span>
+                                <strong>Loose Loot</strong>
+                            </div>
+                            {!looseLootCollapsed && (
+                                <div style={{ marginTop: '6px', fontSize: '13px' }}>
+                                    <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '6px' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={showLooseLoot}
+                                            onChange={() => setShowLooseLoot(!showLooseLoot)}
+                                            style={{ accentColor: '#9a8866' }}
+                                        />
+                                        <span>Show on map</span>
+                                    </label>
+
+                                    <div style={{ marginBottom: '6px' }}>
+                                        <div className="flex justify-between" style={{ fontSize: '12px', marginBottom: '2px' }}>
+                                            <span>Min price</span>
+                                            <span>{'\u20BD'}{looseLootMinPrice.toLocaleString()}</span>
+                                        </div>
+                                        <input
+                                            type="range"
+                                            min={0}
+                                            max={500000}
+                                            step={5000}
+                                            value={looseLootMinPrice}
+                                            onChange={(e) => setLooseLootMinPrice(Number(e.target.value))}
+                                            style={{ width: '100%', accentColor: '#9a8866' }}
+                                        />
+                                    </div>
+
+                                    <div style={{ marginBottom: '6px' }}>
+                                        <div style={{ fontSize: '12px', marginBottom: '2px' }}>Filter</div>
+                                        <select
+                                            value={looseLootFilter}
+                                            onChange={(e) => setLooseLootFilter(e.target.value as 'all' | 'ground' | 'container')}
+                                            style={{ width: '100%', background: '#1a1a1a', color: '#9a8866', border: '1px solid #9a8866', padding: '3px 4px', fontSize: '12px' }}
+                                        >
+                                            <option value="all">All</option>
+                                            <option value="ground">Ground only</option>
+                                            <option value="container">Container only</option>
+                                        </select>
+                                    </div>
+
+                                    <div style={{ fontSize: '11px', opacity: 0.7, marginBottom: '4px' }}>
+                                        {looseLootStats.shown} items shown / {looseLootStats.total} total ({looseLootStats.ground} ground, {looseLootStats.container} container)
+                                    </div>
+
+                                    {showLooseLoot && looseLootData.length > 0 && (
+                                        <div style={{ maxHeight: '300px', overflowY: 'auto', borderTop: '1px solid rgba(154,136,102,0.2)', paddingTop: '4px' }}>
+                                            {[...looseLootData]
+                                                .filter(item => {
+                                                    if (item.itemId && pickedUpItemIds.has(item.itemId)) return false
+                                                    const tp = item.price * item.qty
+                                                    if (tp < looseLootMinPrice) return false
+                                                    const isC = item.inContainer === true || item.inContainer === 1
+                                                    if (looseLootFilter === 'ground' && isC) return false
+                                                    if (looseLootFilter === 'container' && !isC) return false
+                                                    return true
+                                                })
+                                                .sort((a, b) => (b.price * b.qty) - (a.price * a.qty))
+                                                .slice(0, 100)
+                                                .map((item, idx) => {
+                                                    const isC = item.inContainer === true || (item.inContainer as any) === 1
+                                                    const tp = item.price * item.qty
+                                                    return (
+                                                        <div
+                                                            key={idx}
+                                                            className="flex items-center"
+                                                            style={{ padding: '1px 0', fontSize: '12px', gap: '4px', cursor: 'pointer' }}
+                                                            onMouseEnter={() => highlightLooseLootItem(item)}
+                                                            onMouseLeave={() => highlightLooseLootItem(null)}
+                                                        >
+                                                            <span style={{ color: getLootPriceColor(tp), fontSize: '9px', flexShrink: 0 }}>{isC ? '\u25A0' : '\u25C6'}</span>
+                                                            <span style={{ color: getLootPriceColor(tp), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+                                                                {item.itemName}
+                                                            </span>
+                                                            <span style={{ opacity: 0.7, flexShrink: 0 }}>
+                                                                {item.qty > 1 ? `x${item.qty} ` : ''}{'\u20BD'}{tp.toLocaleString()}
+                                                            </span>
+                                                        </div>
+                                                    )
+                                                })
+                                            }
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        {/* ── Bot Inventory Section ── */}
+                        {botsWithInventory.length > 0 && (
+                            <div className="mt-4" style={{ borderTop: '1px solid rgba(154, 136, 102, 0.3)', paddingTop: '8px' }}>
+                                <div
+                                    className="flex items-center cursor-pointer"
+                                    style={{ fontSize: '14px' }}
+                                    onClick={() => setBotInvCollapsed(!botInvCollapsed)}
+                                >
+                                    <span style={{ marginRight: '4px', fontSize: '9px' }}>{botInvCollapsed ? '\u25B6' : '\u25BC'}</span>
+                                    <strong>Bot Inventory</strong>
+                                </div>
+                                {!botInvCollapsed && (
+                                    <div style={{ marginTop: '6px', fontSize: '13px' }}>
+                                        {/* Bot selector with colored dots */}
+                                        <div style={{ maxHeight: '180px', overflowY: 'auto', border: '1px solid rgba(154,136,102,0.4)', marginBottom: '6px', background: '#111' }}>
+                                            {botsWithInventory.map(bot => {
+                                                const bIdx = raidData.players?.indexOf(bot) ?? 0
+                                                const bColor = getPlayerColor(bot, bIdx)
+                                                const isSelected = bot.profileId === selectedBotProfileId
+                                                return (
+                                                    <div
+                                                        key={bot.profileId}
+                                                        onClick={() => setSelectedBotProfileId(isSelected ? '' : bot.profileId)}
+                                                        className="flex items-center cursor-pointer"
+                                                        style={{
+                                                            padding: '3px 6px', fontSize: '12px',
+                                                            background: isSelected ? 'rgba(154,136,102,0.25)' : 'transparent',
+                                                            borderLeft: isSelected ? '2px solid #9a8866' : '2px solid transparent',
+                                                        }}
+                                                    >
+                                                        <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: bColor, marginRight: '5px', flexShrink: 0 }} />
+                                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                            {getDisplayName(bot)}
+                                                        </span>
+                                                        {botSpawnValues[bot.profileId] > 0 && (
+                                                            <span style={{ marginLeft: 'auto', paddingLeft: '4px', opacity: 0.6, flexShrink: 0 }}>
+                                                                {'\u20BD'}{formatCompactNumber(botSpawnValues[bot.profileId])}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+
+                                        {selectedBotProfileId && selectedBotInventory.slots.length > 0 && (
+                                            <div style={{ maxHeight: 'calc(100vh - 400px)', overflowY: 'auto' }}>
+                                                {selectedBotInventory.slots.map((group) => {
+                                                    const isSlotCollapsed = collapsedSlots[group.name] ?? false
+                                                    const attKey = `${group.name}__att`
+                                                    const isAttCollapsed = collapsedSlots[attKey] ?? true
+                                                    return (
+                                                        <div key={group.name} style={{ marginBottom: '4px' }}>
+                                                            {/* Slot header */}
+                                                            <div
+                                                                className="flex items-center justify-between cursor-pointer"
+                                                                onClick={() => toggleSlotCollapse(group.name)}
+                                                                style={{ fontSize: '13px', fontWeight: 'bold', opacity: 0.9, borderBottom: '1px solid rgba(154,136,102,0.2)', marginBottom: '2px', paddingBottom: '2px', userSelect: 'none' }}
+                                                            >
+                                                                <span>
+                                                                    <span style={{ fontSize: '9px', marginRight: '3px' }}>{isSlotCollapsed ? '\u25B6' : '\u25BC'}</span>
+                                                                    {group.name} <span style={{ fontWeight: 'normal', opacity: 0.6 }}>({group.items.length})</span>
+                                                                </span>
+                                                                {!NON_LOOTABLE_SLOTS.test(group.name) && <span style={{ fontWeight: 'normal', opacity: 0.6, fontSize: '12px' }}>{'\u20BD'}{group.total.toLocaleString()}</span>}
+                                                            </div>
+                                                            {/* Slot items */}
+                                                            {!isSlotCollapsed && group.items.map((item, idx) => (
+                                                                <div key={idx} className="flex justify-between" style={{ padding: '1px 0 1px 10px', fontSize: '12px' }}>
+                                                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>
+                                                                        {item.itemName}
+                                                                    </span>
+                                                                    <span style={{ opacity: 0.7 }}>
+                                                                        {item.qty > 1 ? `x${item.qty} ` : ''}{!NON_LOOTABLE_SLOTS.test(group.name) && <>{'\u20BD'}{(item.price * item.qty).toLocaleString()}</>}
+                                                                    </span>
+                                                                </div>
+                                                            ))}
+                                                            {/* Weapon attachments sub-group */}
+                                                            {!isSlotCollapsed && group.attachments && group.attachments.items.length > 0 && (
+                                                                <div style={{ marginTop: '2px', marginLeft: '10px' }}>
+                                                                    <div
+                                                                        className="flex items-center justify-between cursor-pointer"
+                                                                        onClick={() => toggleSlotCollapse(attKey)}
+                                                                        style={{ fontSize: '12px', fontWeight: 'bold', opacity: 0.7, marginBottom: '2px', userSelect: 'none' }}
+                                                                    >
+                                                                        <span>
+                                                                            <span style={{ fontSize: '8px', marginRight: '3px' }}>{isAttCollapsed ? '\u25B6' : '\u25BC'}</span>
+                                                                            {group.attachments.name} parts <span style={{ fontWeight: 'normal' }}>({group.attachments.items.length})</span>
+                                                                        </span>
+                                                                        <span style={{ fontWeight: 'normal', fontSize: '11px' }}>{'\u20BD'}{group.attachments.total.toLocaleString()}</span>
+                                                                    </div>
+                                                                    {!isAttCollapsed && group.attachments.items.map((item, idx) => (
+                                                                        <div key={idx} className="flex justify-between" style={{ padding: '1px 0 1px 10px', fontSize: '11px', opacity: 0.8 }}>
+                                                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '55%' }}>
+                                                                                {item.itemName}
+                                                                            </span>
+                                                                            <span style={{ opacity: 0.6 }}>
+                                                                                {item.qty > 1 ? `x${item.qty} ` : ''}{'\u20BD'}{(item.price * item.qty).toLocaleString()}
+                                                                            </span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                            {/* Other sub-groups (helmet, armor, plates, pockets) */}
+                                                            {!isSlotCollapsed && group.subGroups && group.subGroups.map(sg => {
+                                                                const sgKey = `${group.name}__${sg.name}`
+                                                                const isSgCollapsed = collapsedSlots[sgKey] ?? true
+                                                                return (
+                                                                    <div key={sg.name} style={{ marginTop: '2px', marginLeft: '10px' }}>
+                                                                        <div
+                                                                            className="flex items-center justify-between cursor-pointer"
+                                                                            onClick={() => toggleSlotCollapse(sgKey)}
+                                                                            style={{ fontSize: '12px', fontWeight: 'bold', opacity: 0.7, marginBottom: '2px', userSelect: 'none' }}
+                                                                        >
+                                                                            <span>
+                                                                                <span style={{ fontSize: '8px', marginRight: '3px' }}>{isSgCollapsed ? '\u25B6' : '\u25BC'}</span>
+                                                                                {sg.name} <span style={{ fontWeight: 'normal' }}>({sg.items.length})</span>
+                                                                            </span>
+                                                                            <span style={{ fontWeight: 'normal', fontSize: '11px' }}>{'\u20BD'}{sg.total.toLocaleString()}</span>
+                                                                        </div>
+                                                                        {!isSgCollapsed && sg.items.map((item, idx) => (
+                                                                            <div key={idx} className="flex justify-between" style={{ padding: '1px 0 1px 10px', fontSize: '11px', opacity: 0.8 }}>
+                                                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '55%' }}>
+                                                                                    {item.itemName}
+                                                                                </span>
+                                                                                <span style={{ opacity: 0.6 }}>
+                                                                                    {item.qty > 1 ? `x${item.qty} ` : ''}{'\u20BD'}{(item.price * item.qty).toLocaleString()}
+                                                                                </span>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )
+                                                            })}
+                                                        </div>
+                                                    )
+                                                })}
+                                                <div style={{ borderTop: '1px solid rgba(154,136,102,0.3)', paddingTop: '4px', marginTop: '4px', fontWeight: 'bold', fontSize: '13px' }}>
+                                                    Total: {'\u20BD'}{selectedBotInventory.total.toLocaleString()}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                </aside>
                 <div className="dev__time_sliders p-3 border border-eft mt-4 timeline">
                     <PlayerSlider
                         events={hideEvents ? [] : events}

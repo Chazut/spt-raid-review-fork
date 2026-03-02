@@ -180,11 +180,11 @@ export default function RaidBehaviorTimeline() {
             // Only zoom if cursor is over the timeline area (not the name column)
             const rect = el.getBoundingClientRect()
             const relX = e.clientX - rect.left
-            if (relX < 160) return // over the name column
+            if (relX < 180) return // over the name column
 
             e.preventDefault()
-            const timelineWidth = rect.width - 160
-            const pct = Math.max(0, Math.min(1, (relX - 160) / timelineWidth))
+            const timelineWidth = rect.width - 180
+            const pct = Math.max(0, Math.min(1, (relX - 180) / timelineWidth))
 
             const curStart = viewRange?.start ?? raidStart
             const curEnd = viewRange?.end ?? raidEnd
@@ -221,7 +221,7 @@ export default function RaidBehaviorTimeline() {
 
     if (playerRows.length === 0) {
         return (
-            <div className="p-4 text-eft text-center opacity-50">
+            <div className="p-4 text-eft text-center opacity-50" style={{ fontSize: '14px' }}>
                 No behavior data available. Play a raid with the updated 1.0.0 mod to capture bot decisions.
             </div>
         )
@@ -233,7 +233,7 @@ export default function RaidBehaviorTimeline() {
         <div ref={containerRef} className="p-4" style={{ overflowX: 'auto' }}>
             {/* SAIN recommendation banner */}
             {!hasSain && (
-                <div className="mb-3 px-3 py-2" style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 4, fontSize: '12px', color: '#F59E0B' }}>
+                <div className="mb-3 px-3 py-2" style={{ background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 4, fontSize: '13px', color: '#F59E0B' }}>
                     <strong>SAIN recommended</strong> — Install <a href="https://hub.sp-tarkov.com/files/file/1062-sain-solarint-s-ai-modifications-full-ai-combat-system-replacement/" target="_blank" rel="noreferrer" style={{ color: '#F59E0B', textDecoration: 'underline' }}>SAIN</a> for detailed bot behavior data (Search, StandAndShoot, FirstAid, etc.). Without SAIN, behavior categories are approximate.
                 </div>
             )}
@@ -241,42 +241,42 @@ export default function RaidBehaviorTimeline() {
             {/* Legend + zoom controls */}
             <div className="flex flex-wrap items-center gap-4 mb-4">
                 {Object.values(BEHAVIOR_CATEGORIES).map(cat => (
-                    <div key={cat.key} className="flex items-center gap-1" style={{ fontSize: '11px' }}>
-                        <span style={{ width: 10, height: 10, borderRadius: 2, background: cat.color, display: 'inline-block' }}></span>
+                    <div key={cat.key} className="flex items-center gap-1" style={{ fontSize: '13px' }}>
+                        <span style={{ width: 12, height: 12, borderRadius: 2, background: cat.color, display: 'inline-block' }}></span>
                         <span className="text-eft">{cat.label}</span>
                     </div>
                 ))}
                 {/* Hatched legend items */}
-                <div className="flex items-center gap-1" style={{ fontSize: '11px' }}>
-                    <span className="rr-hatch-prespawn" style={{ width: 10, height: 10, borderRadius: 2, display: 'inline-block', border: '1px solid rgba(154,136,102,0.3)' }}></span>
+                <div className="flex items-center gap-1" style={{ fontSize: '13px' }}>
+                    <span className="rr-hatch-prespawn" style={{ width: 12, height: 12, borderRadius: 2, display: 'inline-block', border: '1px solid rgba(154,136,102,0.3)' }}></span>
                     <span className="text-eft">Pre-spawn</span>
                 </div>
-                <div className="flex items-center gap-1" style={{ fontSize: '11px' }}>
-                    <span className="rr-hatch-dead" style={{ width: 10, height: 10, borderRadius: 2, display: 'inline-block', border: '1px solid rgba(239,68,68,0.3)' }}></span>
+                <div className="flex items-center gap-1" style={{ fontSize: '13px' }}>
+                    <span className="rr-hatch-dead" style={{ width: 12, height: 12, borderRadius: 2, display: 'inline-block', border: '1px solid rgba(239,68,68,0.3)' }}></span>
                     <span className="text-eft">Dead</span>
                 </div>
                 {viewRange && (
-                    <button onClick={resetZoom} className="px-2 py-0.5 text-black bg-eft hover:opacity-75" style={{ fontSize: '10px' }}>
+                    <button onClick={resetZoom} className="px-2 py-0.5 text-black bg-eft hover:opacity-75" style={{ fontSize: '12px' }}>
                         Reset Zoom
                     </button>
                 )}
             </div>
 
             {/* Zoom hint */}
-            <div style={{ fontSize: '9px', color: '#666', marginBottom: 4 }}>
+            <div style={{ fontSize: '11px', color: '#666', marginBottom: 4 }}>
                 Scroll to zoom in/out
             </div>
 
             {/* Time axis */}
             <div className="flex" style={{ marginBottom: 2 }}>
-                <div style={{ width: 160, flexShrink: 0 }}></div>
+                <div style={{ width: 180, flexShrink: 0 }}></div>
                 <div className="relative flex-1" style={{ height: 16 }}>
                     {ticks.map(t => {
                         const left = ((t - effectiveStart) / viewDuration) * 100
                         if (left < 0 || left > 100) return null
                         return (
                             <span key={t} style={{
-                                position: 'absolute', left: `${left}%`, fontSize: '9px',
+                                position: 'absolute', left: `${left}%`, fontSize: '11px',
                                 color: '#9a8866', transform: 'translateX(-50%)', whiteSpace: 'nowrap'
                             }}>
                                 {msToHMS(t)}
@@ -302,9 +302,9 @@ export default function RaidBehaviorTimeline() {
                 }
 
                 return (
-                    <div key={row.profileId} className="flex items-center" style={{ height: 26, marginBottom: 1 }}>
+                    <div key={row.profileId} className="flex items-center" style={{ height: 28, marginBottom: 1 }}>
                         {/* Player name with icon */}
-                        <div className="flex items-center" style={{ width: 160, flexShrink: 0, fontSize: '11px', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                        <div className="flex items-center" style={{ width: 180, flexShrink: 0, fontSize: '13px', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                             {getLegendIcon(row.player, row.color, row.pmcIdx)}
                             <span className="text-eft" style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                 {row.name}
@@ -362,7 +362,7 @@ export default function RaidBehaviorTimeline() {
             {/* Horizontal scroll bar (only when zoomed) */}
             {viewRange && (
                 <div className="flex" style={{ marginTop: 6 }}>
-                    <div style={{ width: 160, flexShrink: 0 }}></div>
+                    <div style={{ width: 180, flexShrink: 0 }}></div>
                     <div className="flex-1" style={{ position: 'relative', height: 16 }}>
                         {/* Track background showing full raid extent */}
                         <div style={{ position: 'absolute', top: 6, left: 0, right: 0, height: 4, background: 'rgba(154,136,102,0.15)', borderRadius: 2 }} />
@@ -436,11 +436,11 @@ export default function RaidBehaviorTimeline() {
                     top: hoveredSegment.y - 10,
                     background: '#1a1a1a',
                     border: '1px solid #9a8866',
-                    padding: '6px 10px',
-                    fontSize: '11px',
+                    padding: '8px 12px',
+                    fontSize: '13px',
                     zIndex: 9999,
                     pointerEvents: 'none',
-                    maxWidth: 300,
+                    maxWidth: 320,
                 }}>
                     <div style={{ color: (hoveredSegment.seg.category === 'idle' || hoveredSegment.seg.category === 'patrol') ? '#9a8866' : hoveredSegment.seg.categoryColor, fontWeight: 'bold' }}>
                         {hoveredSegment.seg.label}
@@ -448,7 +448,7 @@ export default function RaidBehaviorTimeline() {
                     <div style={{ color: '#ccc' }}>
                         {hoveredSegment.seg.decision ? formatDecisionLabel(hoveredSegment.seg.decision) : 'No active decision'}
                     </div>
-                    <div style={{ color: '#999', fontSize: '10px' }}>
+                    <div style={{ color: '#999', fontSize: '12px' }}>
                         {hoveredSegment.playerName} &middot; {msToHMS(hoveredSegment.seg.startTime)} - {msToHMS(hoveredSegment.seg.endTime)}
                         {' '}({((hoveredSegment.seg.endTime - hoveredSegment.seg.startTime) / 1000).toFixed(1)}s)
                     </div>

@@ -18,6 +18,8 @@ using System.Threading.Tasks;
 using System.Linq;
 using System.Collections;
 using EFT.HealthSystem;
+using EFT.InventoryLogic;
+using EFT.Interactive;
 
 namespace RAID_REVIEW
 {
@@ -394,6 +396,100 @@ namespace RAID_REVIEW
             return null;
         }
 
+        /// <summary>Get handbook base price for an item (0 if handbook unavailable).</summary>
+        public static int GetHandbookPrice(Item item)
+        {
+            try { return (int)Singleton<HandbookClass>.Instance.GetBasePrice(item.TemplateId); }
+            catch { return 0; }
+        }
+
+        // ── Loose Loot Capture ──
+        private static bool _looseLootCaptured = false;
+        public static void ResetLooseLootFlag() { _looseLootCaptured = false; }
+
+        private void CaptureLooseLoot()
+        {
+            if (_looseLootCaptured || gameWorld == null) return;
+            _looseLootCaptured = true;
+
+            try
+            {
+                var items = new List<TrackingLooseLootItem>();
+                var seenIds = new HashSet<string>();
+
+                foreach (var lootPoint in gameWorld.LootList)
+                {
+                    try
+                    {
+                        if (lootPoint is LootItem lootItem)
+                        {
+                            var item = lootItem.Item;
+                            if (item == null) continue;
+                            if (!seenIds.Add(item.Id)) continue;
+                            var pos = lootItem.transform.position;
+                            items.Add(new TrackingLooseLootItem
+                            {
+                                itemId = item.Id,
+                                templateId = item.TemplateId.ToString(),
+                                itemName = item.LocalizedShortName(),
+                                price = GetHandbookPrice(item),
+                                qty = item.StackObjectsCount,
+                                x = pos.x, y = pos.y, z = pos.z,
+                                inContainer = false,
+                                containerName = ""
+                            });
+                        }
+                        else if (lootPoint is LootableContainer container)
+                        {
+                            var rootItem = container.ItemOwner?.RootItem;
+                            if (rootItem is CompoundItem compound)
+                            {
+                                var pos = container.transform.position;
+                                var cName = "";
+                                try { cName = rootItem.LocalizedShortName(); } catch { }
+                                foreach (var grid in compound.Grids)
+                                {
+                                    foreach (var contained in grid.Items)
+                                    {
+                                        if (contained == null) continue;
+                                        if (!seenIds.Add(contained.Id)) continue;
+                                        items.Add(new TrackingLooseLootItem
+                                        {
+                                            itemId = contained.Id,
+                                            templateId = contained.TemplateId.ToString(),
+                                            itemName = contained.LocalizedShortName(),
+                                            price = GetHandbookPrice(contained),
+                                            qty = contained.StackObjectsCount,
+                                            x = pos.x, y = pos.y, z = pos.z,
+                                            inContainer = true,
+                                            containerName = cName
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                if (items.Count > 0)
+                {
+                    Logger.LogInfo($"RAID_REVIEW :::: INFO :::: Captured {items.Count} loose loot items");
+                    var payload = new TrackingLooseLoot
+                    {
+                        sessionId = sessionId,
+                        time = stopwatch.ElapsedMilliseconds,
+                        items = items
+                    };
+                    _ = Telemetry.Send("LOOSE_LOOT", JsonConvert.SerializeObject(payload));
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"RAID_REVIEW :::: WARN :::: Loose loot capture failed: {ex.Message}");
+            }
+        }
+
         void Awake()
         {
             Logger.LogInfo("RAID_REVIEW :::: INFO :::: Mod Loaded");
@@ -496,6 +592,9 @@ namespace RAID_REVIEW
                         continue;
                     }
 
+                    // Capture loose loot once per raid (first tick after raid start)
+                    CaptureLooseLoot();
+
                     // PLAYER TRACKING LOOP
                     IEnumerable<Player> allPlayers = gameWorld.AllPlayersEverExisted;
                     long captureTime = stopwatch.ElapsedMilliseconds;
@@ -557,6 +656,39 @@ namespace RAID_REVIEW
 
                             trackingPlayers[trackingPlayer.profileId] = trackingPlayer;
                             _ = Telemetry.Send("PLAYER", JsonConvert.SerializeObject(trackingPlayer));
+
+                            // Capture bot inventory at spawn
+                            if (player.IsAI)
+                            {
+                                try
+                                {
+                                    var invItems = new List<TrackingInventoryItem>();
+                                    foreach (var item in player.Inventory.GetPlayerItems(EPlayerItems.Equipment))
+                                    {
+                                        if (item == null) continue;
+                                        invItems.Add(new TrackingInventoryItem
+                                        {
+                                            templateId = item.TemplateId.ToString(),
+                                            itemName = item.LocalizedShortName(),
+                                            price = GetHandbookPrice(item),
+                                            qty = item.StackObjectsCount,
+                                            slot = item.Parent?.Container?.ID ?? "unknown"
+                                        });
+                                    }
+                                    if (invItems.Count > 0)
+                                    {
+                                        var invPayload = new TrackingPlayerInventory
+                                        {
+                                            sessionId = sessionId,
+                                            profileId = player.ProfileId,
+                                            time = stopwatch.ElapsedMilliseconds,
+                                            items = invItems
+                                        };
+                                        _ = Telemetry.Send("PLAYER_INVENTORY", JsonConvert.SerializeObject(invPayload));
+                                    }
+                                }
+                                catch { }
+                            }
 
                         }
 

@@ -56,10 +56,15 @@ namespace RAID_REVIEW
         public string profileId { get; set; }
         public long time { get; set; }
         public string itemId { get; set; }
+        public string templateId { get; set; }
         public string itemName { get; set; }
+        public int price { get; set; }
         public int qty { get; set; }
         public string type { get; set; }
         public bool added {  get; set; }
+        public float x { get; set; }
+        public float y { get; set; }
+        public float z { get; set; }
     }
 
     public class TrackingPlayerData
@@ -126,5 +131,43 @@ namespace RAID_REVIEW
         public string hitPlayerId { get; set; }
         public string source { get; set; }
         public string target { get; set; }
+    }
+
+    public class TrackingLooseLoot
+    {
+        public string sessionId { get; set; }
+        public long time { get; set; }
+        public List<TrackingLooseLootItem> items { get; set; }
+    }
+
+    public class TrackingLooseLootItem
+    {
+        public string itemId { get; set; }
+        public string templateId { get; set; }
+        public string itemName { get; set; }
+        public int price { get; set; }
+        public int qty { get; set; }
+        public float x { get; set; }
+        public float y { get; set; }
+        public float z { get; set; }
+        public bool inContainer { get; set; }
+        public string containerName { get; set; }
+    }
+
+    public class TrackingPlayerInventory
+    {
+        public string sessionId { get; set; }
+        public string profileId { get; set; }
+        public long time { get; set; }
+        public List<TrackingInventoryItem> items { get; set; }
+    }
+
+    public class TrackingInventoryItem
+    {
+        public string templateId { get; set; }
+        public string itemName { get; set; }
+        public int price { get; set; }
+        public int qty { get; set; }
+        public string slot { get; set; }
     }
 }

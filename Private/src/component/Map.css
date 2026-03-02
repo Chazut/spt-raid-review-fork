@@ -1,7 +1,7 @@
 /* Parent Grid Layout */
 .parent {
   display: grid;
-  grid-template-columns: 400px repeat(3, 1fr);
+  grid-template-columns: 380px 1fr 300px;
   grid-template-rows: auto repeat(3, 1fr) auto;
   grid-column-gap: 0px;
   grid-row-gap: 0px;
@@ -12,20 +12,24 @@
 
 /* Grid Areas */
 .top {
-  grid-area: 1 / 1 / 2 / 5;
+  grid-area: 1 / 1 / 2 / 4;
 }
 .sidebar {
   grid-area: 2 / 1 / 6 / 2;
   z-index: 500;
 }
+.sidebar-right {
+  grid-area: 2 / 3 / 6 / 4;
+  z-index: 500;
+}
 .timeline {
-  grid-area: 5 / 2 / 6 / 5;
+  grid-area: 5 / 2 / 6 / 3;
   z-index: 500;
 }
 .map {
-  grid-area: 2 / 2 / 6 / 5;
-  height: 100vh;
-  width: 100vw;
+  grid-area: 2 / 2 / 6 / 3;
+  height: 100%;
+  width: 100%;
 }
 
 /* Leaflet Map Styling */
@@ -54,6 +58,7 @@
 
 /* Map Wrapper */
 .map-wrapper {
+  position: relative;
   width: 100%;
   height: 100%;
 }
@@ -326,8 +331,8 @@ aside {
   height: fit-content;
   width: fit-content;
   padding: 8px;
-  z-index: 9999;
-  right: 50px;
+  z-index: 499;
+  right: 10px;
   top: 65px;
   gap: 8px;
 }
