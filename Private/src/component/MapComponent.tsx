@@ -17,6 +17,7 @@ import { PlayerSlider } from './MapPlayerSlider.js';
 
 import BotMapping from '../assets/botMapping.json'
 import { getMarkerLabel, getPlayerColor, getLegendIcon, PMC_COLORS, buildPmcIndexMap } from '../helpers/players'
+import { getBehaviorCategory, BEHAVIOR_CATEGORIES, formatDecisionLabel } from '../helpers/botBehavior'
 
 import 'leaflet/dist/leaflet.css';
 
@@ -83,40 +84,51 @@ function getTooltipIconHtml(player: any, color: string, pmcIdx?: number): string
     return `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};vertical-align:middle;margin-right:3px;"></span>`
 }
 
-function createPlayerMarker(latlng: any, color: string, player: any, proportionalScale: number, opacity: number = 1, pmcIndex?: number, tooltipText?: string): L.Layer {
+function createPlayerMarker(latlng: any, color: string, player: any, proportionalScale: number, opacity: number = 1, pmcIndex?: number, tooltipText?: string, behaviorColor?: string | null): L.Layer {
     const displayName = tooltipText || getDisplayName(player)
     const tooltipOpts: L.TooltipOptions = { direction: 'top', offset: [0, -10], className: 'player-tooltip' }
+    const ringStyle = behaviorColor ? `box-shadow: 0 0 0 3px ${behaviorColor}, 0 0 6px 1px ${behaviorColor}55;` : ''
     const label = getMarkerLabel(player)
     if (label === 'BTR_ICON') {
         const btrSvg = `<svg viewBox="0 0 24 18" width="24" height="18" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="3" width="20" height="8" rx="1" fill="${color}" opacity="${opacity}"/><rect x="5" y="1" width="10" height="4" rx="1" fill="${color}" opacity="${opacity}"/><line x1="15" y1="3" x2="20" y2="5" stroke="${color}" stroke-width="1.2" opacity="${opacity}"/><circle cx="5.5" cy="13.5" r="2.5" fill="${color}" opacity="${opacity}"/><circle cx="12" cy="13.5" r="2.5" fill="${color}" opacity="${opacity}"/><circle cx="18.5" cy="13.5" r="2.5" fill="${color}" opacity="${opacity}"/><circle cx="5.5" cy="13.5" r="1" fill="#1a1a1a"/><circle cx="12" cy="13.5" r="1" fill="#1a1a1a"/><circle cx="18.5" cy="13.5" r="1" fill="#1a1a1a"/></svg>`
         const icon = L.divIcon({
             className: 'special-bot-marker',
-            html: `<div style="display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 0 2px rgba(0,0,0,0.9));">${btrSvg}</div>`,
+            html: `<div style="display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 0 2px rgba(0,0,0,0.9));${ringStyle}">${btrSvg}</div>`,
             iconSize: [24, 20],
             iconAnchor: [12, 10],
         })
-        return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, tooltipOpts)
+        return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, { ...tooltipOpts, className: 'player-tooltip player-tooltip-html' })
     }
     if (label) {
         const icon = L.divIcon({
             className: 'special-bot-marker',
-            html: `<div class="bot-marker-dot" style="background-color: ${color}; opacity: ${opacity};">${label}</div>`,
+            html: `<div class="bot-marker-dot" style="background-color: ${color}; opacity: ${opacity}; ${ringStyle}">${label}</div>`,
             iconSize: [18, 18],
             iconAnchor: [9, 9],
         })
-        return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, tooltipOpts)
+        return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, { ...tooltipOpts, className: 'player-tooltip player-tooltip-html' })
     }
     // PMCs and player scavs get white border + number label
     if (pmcIndex !== undefined) {
         const icon = L.divIcon({
             className: 'special-bot-marker',
-            html: `<div class="bot-marker-dot bot-marker-round" style="background-color: ${color}; opacity: ${opacity};">${pmcIndex}</div>`,
+            html: `<div class="bot-marker-dot bot-marker-round" style="background-color: ${color}; opacity: ${opacity}; ${ringStyle}">${pmcIndex}</div>`,
             iconSize: [18, 18],
             iconAnchor: [9, 9],
         })
-        return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, tooltipOpts)
+        return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, { ...tooltipOpts, className: 'player-tooltip player-tooltip-html' })
     }
-    // Scavs: plain circle, no border
+    // Scavs: plain circle — use divIcon for behavior ring support
+    if (behaviorColor) {
+        const size = Math.max(10, proportionalScale * 2)
+        const icon = L.divIcon({
+            className: 'special-bot-marker',
+            html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};opacity:${opacity};${ringStyle}"></div>`,
+            iconSize: [size, size],
+            iconAnchor: [size / 2, size / 2],
+        })
+        return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, { ...tooltipOpts, className: 'player-tooltip player-tooltip-html' })
+    }
     return L.circle(latlng, { radius: proportionalScale, color, fillOpacity: opacity, fillRule: 'nonzero', opacity }).bindTooltip(displayName, tooltipOpts)
 }
 import '../modules/leaflet-heat.js'
@@ -248,6 +260,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     const [sliderTimes, setSliderTimes] = useState([])
     const [hideSettings, setHideSettings] = useState(true)
     const [hidePlayers, setHidePlayers] = useState(false)
+    const [showBehavior, setShowBehavior] = useState(!!raidData?.detectedMods?.match(/SAIN/gi))
     const [hideEvents, setHideEvents] = useState(false)
     const [hideBallistics, setHideBallistics] = useState(false)
     const [hideNerdStats, setHideNerdStats] = useState(true)
@@ -684,8 +697,26 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 pl._rr_normalOpacity = preserveHistory ? 0.8 : isPlayerDead ? 0 : 0.8
 
                 if (!isPlayerDead) {
-                    const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})`
-                    const marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, markerOpacity, pmcIndexMap[playerId], tip)
+                    // Get latest behavior decision from position data (skip BTR)
+                    const isBTR = player?.type?.includes('BTR')
+                    let currentDecision: string | undefined
+                    let behaviorCat = null
+                    let behaviorLine = ''
+                    if (showBehavior && !isBTR) {
+                        const pp = positions[playerId]
+                        if (pp) {
+                            for (let di = pp.length - 1; di >= 0; di--) {
+                                if (pp[di].time <= timeEndLimit) {
+                                    currentDecision = pp[di].decision
+                                    break
+                                }
+                            }
+                        }
+                        behaviorCat = getBehaviorCategory(currentDecision)
+                        behaviorLine = behaviorCat ? `<br/><span style="color:${behaviorCat.color}">${behaviorCat.label}</span>: ${formatDecisionLabel(currentDecision)}` : ''
+                    }
+                    const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})${behaviorLine}`
+                    const marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, markerOpacity, pmcIndexMap[playerId], tip, behaviorCat?.color)
                     marker._rr_playerId = playerId
                     marker._rr_isDead = false
                     marker._rr_normalOpacity = 1
@@ -724,7 +755,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             setTimeEndLimit(times[times.length - 1])
             setTimeCurrentIndex(times.length - 1)
         }
-    }, [mapIsReady, mapViewRef, timeEndLimit, timeStartLimit, timeCurrentIndex, MAP, preserveHistory, events, hideEvents, hidePlayers, followPlayer, pmcIndexMap])
+    }, [mapIsReady, mapViewRef, timeEndLimit, timeStartLimit, timeCurrentIndex, MAP, preserveHistory, events, hideEvents, hidePlayers, followPlayer, pmcIndexMap, showBehavior])
 
     // Focus overlay: adjusts layer opacity + kill visualization without full re-render
     useEffect(() => {
@@ -1409,6 +1440,22 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                 )
                             })
                         })()}
+                        {showBehavior && <div className="mt-4" style={{ borderTop: '1px solid rgba(154, 136, 102, 0.3)', paddingTop: '8px' }}>
+                            <strong style={{ fontSize: '12px' }}>Bot Behavior</strong>
+                            <div style={{ marginTop: '4px' }}>
+                                {Object.values(BEHAVIOR_CATEGORIES).map(cat => (
+                                    <div key={cat.key} className="flex items-center" style={{ padding: '1px 0', fontSize: '11px' }}>
+                                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: cat.color, marginRight: 6, flexShrink: 0, display: 'inline-block', boxShadow: `0 0 4px ${cat.color}` }}></span>
+                                        <span>{cat.label}</span>
+                                    </div>
+                                ))}
+                            </div>
+                            {!raidData?.detectedMods?.match(/SAIN/gi) && (
+                                <div style={{ marginTop: '6px', fontSize: '9px', color: '#F59E0B', opacity: 0.7 }}>
+                                    SAIN recommended for detailed behavior data
+                                </div>
+                            )}
+                        </div>}
                     </div>
                 </aside>
                 <div className="map-wrapper border border-eft map">
@@ -1520,6 +1567,9 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                             </button>
                             <button className={`text-xs p-1 text-sm cursor-pointer ${!hideNerdStats ? 'bg-eft text-black ' : 'cursor-pointer text-eft'} border border-eft`} onClick={() => setHideNerdStats(!hideNerdStats)}>
                                 Debug
+                            </button>
+                            <button className={`text-xs p-1 text-sm cursor-pointer ${showBehavior ? 'bg-eft text-black ' : 'cursor-pointer text-eft'} border border-eft`} onClick={() => setShowBehavior(!showBehavior)}>
+                                Behavior
                             </button>
                         </div>
                     </div>

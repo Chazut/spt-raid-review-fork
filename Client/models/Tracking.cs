@@ -73,17 +73,19 @@ namespace RAID_REVIEW
         public float dir { get; set; }
         public float health { get; set; }
         public float maxHealth { get; set; }
+        public string decision { get; set; }
 
         public TrackingPlayerData(
-            string sessionId, 
-            string profileId, 
-            long time, 
-            float x, 
-            float y, 
-            float z, 
+            string sessionId,
+            string profileId,
+            long time,
+            float x,
+            float y,
+            float z,
             float dir,
             float health,
-            float maxHealth
+            float maxHealth,
+            string decision = ""
         )
         {
             this.sessionId = sessionId;
@@ -95,6 +97,7 @@ namespace RAID_REVIEW
             this.dir = dir;
             this.health = health;
             this.maxHealth = maxHealth;
+            this.decision = decision;
         }
     }
 

@@ -19,6 +19,7 @@ export interface TrackingPositionalData {
   y: Number
   z: Number
   dir: Number
+  decision?: string
   created_at: Date
 }
 

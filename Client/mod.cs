@@ -147,6 +147,98 @@ namespace RAID_REVIEW
         public static bool searchingForSainComponents = false;
         public static Dictionary<string, TrackingPlayer> updatedBots = new Dictionary<string, TrackingPlayer>();
 
+        // SAIN reflection cache
+        private static bool _sainReflectionInit = false;
+        private static bool _sainAvailable = false;
+        private static Type _sainBotComponentType;
+        private static PropertyInfo _sainActiveLayerProp;
+        private static PropertyInfo _sainDecisionProp;
+        private static PropertyInfo _sainCombatDecProp;
+        private static PropertyInfo _sainSelfDecProp;
+        private static PropertyInfo _sainSquadDecProp;
+
+        private static void InitSainReflection()
+        {
+            if (_sainReflectionInit) return;
+            _sainReflectionInit = true;
+            try
+            {
+                var sainAssembly = AppDomain.CurrentDomain.GetAssemblies()
+                    .FirstOrDefault(a => a.GetName().Name == "SAIN");
+                if (sainAssembly == null) return;
+
+                _sainBotComponentType = sainAssembly.GetType("SAIN.Components.BotComponent");
+                if (_sainBotComponentType == null) return;
+
+                _sainActiveLayerProp = _sainBotComponentType.GetProperty("ActiveLayer");
+                _sainDecisionProp = _sainBotComponentType.GetProperty("Decision");
+
+                if (_sainDecisionProp != null)
+                {
+                    var decClassType = _sainDecisionProp.PropertyType;
+                    _sainCombatDecProp = decClassType?.GetProperty("CurrentCombatDecision");
+                    _sainSelfDecProp = decClassType?.GetProperty("CurrentSelfDecision");
+                    _sainSquadDecProp = decClassType?.GetProperty("CurrentSquadDecision");
+                }
+
+                _sainAvailable = true;
+            }
+            catch { }
+        }
+
+        private static string GetSainDecision(Player player)
+        {
+            if (!_sainAvailable || _sainBotComponentType == null) return null;
+
+            try
+            {
+                var botComp = player.gameObject.GetComponent(_sainBotComponentType);
+                if (botComp == null) return null;
+
+                if (_sainDecisionProp != null)
+                {
+                    var decisionObj = _sainDecisionProp.GetValue(botComp);
+                    if (decisionObj != null)
+                    {
+                        // Self decisions (FirstAid, Reload, Surgery, Stims) take priority
+                        if (_sainSelfDecProp != null)
+                        {
+                            var selfDec = _sainSelfDecProp.GetValue(decisionObj)?.ToString();
+                            if (!string.IsNullOrEmpty(selfDec) && selfDec != "None" && selfDec != "0")
+                                return "SAIN:" + selfDec;
+                        }
+
+                        // Combat decisions (Search, StandAndShoot, DogFight, etc.)
+                        if (_sainCombatDecProp != null)
+                        {
+                            var combatDec = _sainCombatDecProp.GetValue(decisionObj)?.ToString();
+                            if (!string.IsNullOrEmpty(combatDec) && combatDec != "None" && combatDec != "0")
+                                return "SAIN:" + combatDec;
+                        }
+
+                        // Squad decisions (Regroup, Suppress, Help, etc.)
+                        if (_sainSquadDecProp != null)
+                        {
+                            var squadDec = _sainSquadDecProp.GetValue(decisionObj)?.ToString();
+                            if (!string.IsNullOrEmpty(squadDec) && squadDec != "None" && squadDec != "0")
+                                return "SAIN:" + squadDec;
+                        }
+                    }
+                }
+
+                // Fallback to active layer name (Combat, Peace, Extract, etc.)
+                if (_sainActiveLayerProp != null)
+                {
+                    var layer = _sainActiveLayerProp.GetValue(botComp)?.ToString();
+                    if (!string.IsNullOrEmpty(layer) && layer != "None" && layer != "0")
+                        return "SAIN:" + layer;
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
         void Awake()
         {
             Logger.LogInfo("RAID_REVIEW :::: INFO :::: Mod Loaded");
@@ -353,7 +445,36 @@ namespace RAID_REVIEW
                                 float currentHealth = commonHealth.Current;
                                 float currentHealthMaximum = commonHealth.Current;
 
-                                var trackingPlayerData = new TrackingPlayerData(sessionId, player.ProfileId, captureTime, playerPosition.x, playerPosition.y, playerPosition.z, dir, currentHealth, currentHealthMaximum);
+                                // Bot behavior state
+                                string decision = "";
+                                if (player.IsAI)
+                                {
+                                    try
+                                    {
+                                        InitSainReflection();
+
+                                        // Try SAIN reflection first for meaningful decision names
+                                        var sainDec = GetSainDecision(player);
+                                        if (!string.IsNullOrEmpty(sainDec))
+                                        {
+                                            decision = sainDec;
+                                        }
+                                        else
+                                        {
+                                            // Vanilla fallback — skip BigBrain custom IDs (>= 9000)
+                                            var botOwner = player.AIData?.BotOwner;
+                                            if (botOwner?.Brain != null)
+                                            {
+                                                var lastDecision = botOwner.Brain.LastDecision;
+                                                if (lastDecision.HasValue && (int)lastDecision.Value < 9000)
+                                                    decision = lastDecision.Value.ToString();
+                                            }
+                                        }
+                                    }
+                                    catch { }
+                                }
+
+                                var trackingPlayerData = new TrackingPlayerData(sessionId, player.ProfileId, captureTime, playerPosition.x, playerPosition.y, playerPosition.z, dir, currentHealth, currentHealthMaximum, decision);
                                 _ = Telemetry.Send("POSITION", JsonConvert.SerializeObject(trackingPlayerData));
                             }
 

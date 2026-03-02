@@ -24,6 +24,7 @@ export default function Raid() {
               <Link to={`/raid/${raidId}/charts`} className='py-1 px-4 bg-eft text-black hover:opacity-75'>Stats</Link>
               <Link to={`/raid/${raidId}/timeline`} className='py-1 px-4 bg-eft text-black hover:opacity-75'>Timeline</Link>
               <Link to={`/raid/${raidId}/map`} className='py-1 px-4 bg-eft text-black hover:opacity-75'>Map</Link>
+              <Link to={`/raid/${raidId}/behavior`} className='py-1 px-4 bg-eft text-black hover:opacity-75'>Behavior</Link>
           </div>
           <div className="flex gap-2">
               {/* <button className='py-1 px-4 bg-eft text-black hover:opacity-75'>Export</button> */}

@@ -10,7 +10,7 @@ public class GarbageCollector
     private readonly DataFileService _fileService;
     private readonly RaidReviewLogger _logger;
     private readonly RaidReviewConfig _config;
-    private const string ActiveVersion = "V3";
+    private const string ActiveVersion = "V4";
 
     public GarbageCollector(DatabaseService db, DataFileService fileService, RaidReviewLogger logger, RaidReviewConfig config)
     {
