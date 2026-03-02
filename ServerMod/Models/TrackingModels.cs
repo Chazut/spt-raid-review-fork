@@ -98,4 +98,5 @@ public record PositionalDataEntry
     public string? RaidId { get; set; }
     public float? Health { get; set; }
     public float? MaxHealth { get; set; }
+    public string? Decision { get; set; }
 }

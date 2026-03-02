@@ -18,6 +18,8 @@ using System.Threading.Tasks;
 using System.Linq;
 using System.Collections;
 using EFT.HealthSystem;
+using EFT.InventoryLogic;
+using EFT.Interactive;
 
 namespace RAID_REVIEW
 {
@@ -147,6 +149,347 @@ namespace RAID_REVIEW
         public static bool searchingForSainComponents = false;
         public static Dictionary<string, TrackingPlayer> updatedBots = new Dictionary<string, TrackingPlayer>();
 
+        // SAIN reflection cache
+        private static bool _sainReflectionInit = false;
+        private static bool _sainAvailable = false;
+        private static Type _sainBotComponentType;
+        private static Type _sainBotControllerType;
+        private static PropertyInfo _sainActiveLayerProp;
+        private static PropertyInfo _sainDecisionProp;
+        private static PropertyInfo _sainCombatDecProp;
+        private static PropertyInfo _sainSelfDecProp;
+        private static PropertyInfo _sainSquadDecProp;
+        private static PropertyInfo _sainCurrentActionProp;
+        private static PropertyInfo _sainActionNameProp;
+        private static PropertyInfo _sainBotsProp;
+        private static PropertyInfo _sainBotPlayerProp;
+        private static PropertyInfo _sainBotProfileIdProp;
+        private static PropertyInfo _sainMoverProp;
+        private static PropertyInfo _sainMoverMovingProp;
+        private static PropertyInfo _sainMoverSprintProp;
+        private static PropertyInfo _sainStandByProp;
+        private static PropertyInfo _sainLayersActiveProp;
+
+        private static void InitSainReflection()
+        {
+            if (_sainReflectionInit) return;
+            _sainReflectionInit = true;
+            try
+            {
+                _sainBotComponentType = Type.GetType("SAIN.Components.BotComponent, SAIN");
+                _sainBotControllerType = Type.GetType("SAIN.Components.BotManagerComponent, SAIN");
+
+                if (_sainBotComponentType == null)
+                {
+                    LoggerInstance.Log.LogWarning("RAID_REVIEW :::: SAIN :::: BotComponent type not found");
+                    return;
+                }
+
+                _sainActiveLayerProp = _sainBotComponentType.GetProperty("ActiveLayer");
+                _sainDecisionProp = _sainBotComponentType.GetProperty("Decision");
+                _sainCurrentActionProp = _sainBotComponentType.GetProperty("CurrentAction");
+                _sainBotPlayerProp = _sainBotComponentType.GetProperty("Player");
+
+                if (_sainDecisionProp != null)
+                {
+                    var decClassType = _sainDecisionProp.PropertyType;
+                    _sainCombatDecProp = decClassType?.GetProperty("CurrentCombatDecision");
+                    _sainSelfDecProp = decClassType?.GetProperty("CurrentSelfDecision");
+                    _sainSquadDecProp = decClassType?.GetProperty("CurrentSquadDecision");
+                }
+
+                if (_sainCurrentActionProp != null)
+                {
+                    _sainActionNameProp = _sainCurrentActionProp.PropertyType?.GetProperty("Name");
+                }
+
+                if (_sainBotControllerType != null)
+                {
+                    _sainBotsProp = _sainBotControllerType.GetProperty("Bots");
+                }
+
+                if (_sainBotPlayerProp != null)
+                {
+                    _sainBotProfileIdProp = _sainBotPlayerProp.PropertyType?.GetProperty("ProfileId");
+                }
+
+                // Movement/state properties for peace mode granularity
+                _sainMoverProp = _sainBotComponentType.GetProperty("Mover");
+                _sainStandByProp = _sainBotComponentType.GetProperty("BotInStandBy");
+                _sainLayersActiveProp = _sainBotComponentType.GetProperty("SAINLayersActive");
+
+                if (_sainMoverProp != null)
+                {
+                    var moverType = _sainMoverProp.PropertyType;
+                    _sainMoverMovingProp = moverType?.GetProperty("Moving");
+                    _sainMoverSprintProp = moverType?.GetProperty("SprintController");
+                    // Try "Running" as fallback
+                    if (_sainMoverSprintProp == null)
+                        _sainMoverSprintProp = moverType?.GetProperty("Running");
+                }
+
+                _sainAvailable = true;
+
+                LoggerInstance.Log.LogInfo($"RAID_REVIEW :::: SAIN :::: Reflection init OK — " +
+                    $"Decision={_sainDecisionProp != null}, Combat={_sainCombatDecProp != null}, " +
+                    $"Self={_sainSelfDecProp != null}, Squad={_sainSquadDecProp != null}, " +
+                    $"Action={_sainCurrentActionProp != null}, ActionName={_sainActionNameProp != null}, " +
+                    $"ActiveLayer={_sainActiveLayerProp != null}, " +
+                    $"Controller={_sainBotControllerType != null}, Bots={_sainBotsProp != null}, " +
+                    $"Mover={_sainMoverProp != null}, Moving={_sainMoverMovingProp != null}, " +
+                    $"StandBy={_sainStandByProp != null}, LayersActive={_sainLayersActiveProp != null}");
+            }
+            catch (Exception ex)
+            {
+                LoggerInstance.Log.LogWarning($"RAID_REVIEW :::: SAIN :::: Reflection init failed: {ex.Message}");
+            }
+        }
+
+        // Cache: profileId → SAIN BotComponent (rebuilt each position tick)
+        private static Dictionary<string, object> _sainBotCache = new Dictionary<string, object>();
+
+        private static void RefreshSainBotCache()
+        {
+            _sainBotCache.Clear();
+            try
+            {
+                // Use the already-discovered sainBotController from SAIN_Integration
+                var controller = RAID_REVIEW.sainBotController;
+                if (controller == null || _sainBotsProp == null) return;
+
+                var bots = _sainBotsProp.GetValue(controller);
+                if (bots == null) return;
+
+                var botValues = (IEnumerable)bots.GetType().GetProperty("Values")?.GetValue(bots);
+                if (botValues == null) return;
+
+                foreach (var botComp in botValues)
+                {
+                    try
+                    {
+                        string profileId = null;
+                        if (_sainBotPlayerProp != null)
+                        {
+                            var playerObj = _sainBotPlayerProp.GetValue(botComp);
+                            if (playerObj != null && _sainBotProfileIdProp != null)
+                                profileId = _sainBotProfileIdProp.GetValue(playerObj)?.ToString();
+                        }
+                        if (!string.IsNullOrEmpty(profileId))
+                            _sainBotCache[profileId] = botComp;
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
+        private static string ExtractDecisionFromBotComp(object botComp)
+        {
+            if (botComp == null) return null;
+
+            if (_sainDecisionProp != null)
+            {
+                var decisionObj = _sainDecisionProp.GetValue(botComp);
+                if (decisionObj != null)
+                {
+                    // Self decisions (FirstAid, Reload, Surgery, Stims) take priority
+                    if (_sainSelfDecProp != null)
+                    {
+                        var selfDec = _sainSelfDecProp.GetValue(decisionObj)?.ToString();
+                        if (!string.IsNullOrEmpty(selfDec) && selfDec != "None" && selfDec != "0")
+                            return "SAIN:" + selfDec;
+                    }
+
+                    // Combat decisions (Search, StandAndShoot, DogFight, etc.)
+                    if (_sainCombatDecProp != null)
+                    {
+                        var combatDec = _sainCombatDecProp.GetValue(decisionObj)?.ToString();
+                        if (!string.IsNullOrEmpty(combatDec) && combatDec != "None" && combatDec != "0")
+                            return "SAIN:" + combatDec;
+                    }
+
+                    // Squad decisions (Regroup, Suppress, Help, etc.)
+                    if (_sainSquadDecProp != null)
+                    {
+                        var squadDec = _sainSquadDecProp.GetValue(decisionObj)?.ToString();
+                        if (!string.IsNullOrEmpty(squadDec) && squadDec != "None" && squadDec != "0")
+                            return "SAIN:" + squadDec;
+                    }
+                }
+            }
+
+            // CurrentAction.Name
+            if (_sainCurrentActionProp != null && _sainActionNameProp != null)
+            {
+                var actionObj = _sainCurrentActionProp.GetValue(botComp);
+                if (actionObj != null)
+                {
+                    var actionName = _sainActionNameProp.GetValue(actionObj)?.ToString();
+                    if (!string.IsNullOrEmpty(actionName))
+                        return "SAIN:" + actionName;
+                }
+            }
+
+            // Fallback to active layer name (Combat, Peace, Extract, etc.)
+            if (_sainActiveLayerProp != null)
+            {
+                var layer = _sainActiveLayerProp.GetValue(botComp)?.ToString();
+                if (!string.IsNullOrEmpty(layer) && layer != "None" && layer != "0")
+                    return "SAIN:" + layer;
+            }
+
+            // Bot is managed by SAIN but all decisions are "None" — check movement state
+            try
+            {
+                // Check if bot is in AI-limiter standby (not actually doing anything)
+                if (_sainStandByProp != null)
+                {
+                    var standBy = _sainStandByProp.GetValue(botComp);
+                    if (standBy is true)
+                        return "SAIN:standBy";
+                }
+
+                // Check Mover.Moving to distinguish patrol from idle
+                if (_sainMoverProp != null && _sainMoverMovingProp != null)
+                {
+                    var mover = _sainMoverProp.GetValue(botComp);
+                    if (mover != null)
+                    {
+                        var moving = _sainMoverMovingProp.GetValue(mover);
+                        if (moving is true)
+                            return "SAIN:simplePatrol";
+                    }
+                }
+            }
+            catch { }
+
+            // Truly idle — no SAIN decision, not moving
+            return "SAIN:peaceful";
+        }
+
+        private static string GetSainDecision(Player player)
+        {
+            if (!_sainAvailable) return null;
+
+            try
+            {
+                // Primary: lookup from BotManagerComponent.Bots dictionary (populated by SAIN_Integration)
+                if (_sainBotCache.TryGetValue(player.ProfileId, out var cachedComp))
+                {
+                    var result = ExtractDecisionFromBotComp(cachedComp);
+                    if (result != null) return result;
+                }
+
+                // Fallback: try GetComponent directly on player's gameObject
+                if (_sainBotComponentType != null)
+                {
+                    var botComp = player.gameObject.GetComponent(_sainBotComponentType);
+                    if (botComp != null)
+                    {
+                        var result = ExtractDecisionFromBotComp(botComp);
+                        if (result != null) return result;
+                    }
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        /// <summary>Get handbook base price for an item (0 if handbook unavailable).</summary>
+        public static int GetHandbookPrice(Item item)
+        {
+            try { return (int)Singleton<HandbookClass>.Instance.GetBasePrice(item.TemplateId); }
+            catch { return 0; }
+        }
+
+        // ── Loose Loot Capture ──
+        private static bool _looseLootCaptured = false;
+        public static void ResetLooseLootFlag() { _looseLootCaptured = false; }
+
+        private void CaptureLooseLoot()
+        {
+            if (_looseLootCaptured || gameWorld == null) return;
+            _looseLootCaptured = true;
+
+            try
+            {
+                var items = new List<TrackingLooseLootItem>();
+                var seenIds = new HashSet<string>();
+
+                foreach (var lootPoint in gameWorld.LootList)
+                {
+                    try
+                    {
+                        if (lootPoint is LootItem lootItem)
+                        {
+                            var item = lootItem.Item;
+                            if (item == null) continue;
+                            if (!seenIds.Add(item.Id)) continue;
+                            var pos = lootItem.transform.position;
+                            items.Add(new TrackingLooseLootItem
+                            {
+                                itemId = item.Id,
+                                templateId = item.TemplateId.ToString(),
+                                itemName = item.LocalizedShortName(),
+                                price = GetHandbookPrice(item),
+                                qty = item.StackObjectsCount,
+                                x = pos.x, y = pos.y, z = pos.z,
+                                inContainer = false,
+                                containerName = ""
+                            });
+                        }
+                        else if (lootPoint is LootableContainer container)
+                        {
+                            var rootItem = container.ItemOwner?.RootItem;
+                            if (rootItem is CompoundItem compound)
+                            {
+                                var pos = container.transform.position;
+                                var cName = "";
+                                try { cName = rootItem.LocalizedShortName(); } catch { }
+                                foreach (var grid in compound.Grids)
+                                {
+                                    foreach (var contained in grid.Items)
+                                    {
+                                        if (contained == null) continue;
+                                        if (!seenIds.Add(contained.Id)) continue;
+                                        items.Add(new TrackingLooseLootItem
+                                        {
+                                            itemId = contained.Id,
+                                            templateId = contained.TemplateId.ToString(),
+                                            itemName = contained.LocalizedShortName(),
+                                            price = GetHandbookPrice(contained),
+                                            qty = contained.StackObjectsCount,
+                                            x = pos.x, y = pos.y, z = pos.z,
+                                            inContainer = true,
+                                            containerName = cName
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+
+                if (items.Count > 0)
+                {
+                    Logger.LogInfo($"RAID_REVIEW :::: INFO :::: Captured {items.Count} loose loot items");
+                    var payload = new TrackingLooseLoot
+                    {
+                        sessionId = sessionId,
+                        time = stopwatch.ElapsedMilliseconds,
+                        items = items
+                    };
+                    _ = Telemetry.Send("LOOSE_LOOT", JsonConvert.SerializeObject(payload));
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"RAID_REVIEW :::: WARN :::: Loose loot capture failed: {ex.Message}");
+            }
+        }
+
         void Awake()
         {
             Logger.LogInfo("RAID_REVIEW :::: INFO :::: Mod Loaded");
@@ -249,9 +592,19 @@ namespace RAID_REVIEW
                         continue;
                     }
 
+                    // Capture loose loot once per raid (first tick after raid start)
+                    CaptureLooseLoot();
+
                     // PLAYER TRACKING LOOP
                     IEnumerable<Player> allPlayers = gameWorld.AllPlayersEverExisted;
                     long captureTime = stopwatch.ElapsedMilliseconds;
+
+                    // Refresh SAIN bot cache once per tick (before iterating players)
+                    if (SOLARINT_SAIN__DETECTED)
+                    {
+                        InitSainReflection();
+                        RefreshSainBotCache();
+                    }
                     foreach (Player player in allPlayers)
                     {
 
@@ -304,6 +657,39 @@ namespace RAID_REVIEW
                             trackingPlayers[trackingPlayer.profileId] = trackingPlayer;
                             _ = Telemetry.Send("PLAYER", JsonConvert.SerializeObject(trackingPlayer));
 
+                            // Capture bot inventory at spawn
+                            if (player.IsAI)
+                            {
+                                try
+                                {
+                                    var invItems = new List<TrackingInventoryItem>();
+                                    foreach (var item in player.Inventory.GetPlayerItems(EPlayerItems.Equipment))
+                                    {
+                                        if (item == null) continue;
+                                        invItems.Add(new TrackingInventoryItem
+                                        {
+                                            templateId = item.TemplateId.ToString(),
+                                            itemName = item.LocalizedShortName(),
+                                            price = GetHandbookPrice(item),
+                                            qty = item.StackObjectsCount,
+                                            slot = item.Parent?.Container?.ID ?? "unknown"
+                                        });
+                                    }
+                                    if (invItems.Count > 0)
+                                    {
+                                        var invPayload = new TrackingPlayerInventory
+                                        {
+                                            sessionId = sessionId,
+                                            profileId = player.ProfileId,
+                                            time = stopwatch.ElapsedMilliseconds,
+                                            items = invItems
+                                        };
+                                        _ = Telemetry.Send("PLAYER_INVENTORY", JsonConvert.SerializeObject(invPayload));
+                                    }
+                                }
+                                catch { }
+                            }
+
                         }
 
                         // Checks if a player / bot has died since the last check...
@@ -353,7 +739,34 @@ namespace RAID_REVIEW
                                 float currentHealth = commonHealth.Current;
                                 float currentHealthMaximum = commonHealth.Current;
 
-                                var trackingPlayerData = new TrackingPlayerData(sessionId, player.ProfileId, captureTime, playerPosition.x, playerPosition.y, playerPosition.z, dir, currentHealth, currentHealthMaximum);
+                                // Bot behavior state
+                                string decision = "";
+                                if (player.IsAI)
+                                {
+                                    try
+                                    {
+                                        // Try SAIN reflection first for meaningful decision names
+                                        var sainDec = GetSainDecision(player);
+                                        if (!string.IsNullOrEmpty(sainDec))
+                                        {
+                                            decision = sainDec;
+                                        }
+                                        else
+                                        {
+                                            // Vanilla fallback — always send, even BigBrain IDs (frontend maps 9000+)
+                                            var botOwner = player.AIData?.BotOwner;
+                                            if (botOwner?.Brain != null)
+                                            {
+                                                var lastDecision = botOwner.Brain.LastDecision;
+                                                if (lastDecision.HasValue)
+                                                    decision = lastDecision.Value.ToString();
+                                            }
+                                        }
+                                    }
+                                    catch { }
+                                }
+
+                                var trackingPlayerData = new TrackingPlayerData(sessionId, player.ProfileId, captureTime, playerPosition.x, playerPosition.y, playerPosition.z, dir, currentHealth, currentHealthMaximum, decision);
                                 _ = Telemetry.Send("POSITION", JsonConvert.SerializeObject(trackingPlayerData));
                             }
 

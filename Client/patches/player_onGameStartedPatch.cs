@@ -64,6 +64,7 @@ namespace RAID_REVIEW
                 Telemetry.Send("PLAYER", JsonConvert.SerializeObject(newTrackingPlayer));
 
                 RAID_REVIEW.inRaid = true;
+                RAID_REVIEW.ResetLooseLootFlag();
                 Logger.LogInfo("RAID_REVIEW :::: INFO :::: RAID Information Populated");
 
                 if (RAID_REVIEW.RecordingNotification.Value && RAID_REVIEW.WebSocketConnected)

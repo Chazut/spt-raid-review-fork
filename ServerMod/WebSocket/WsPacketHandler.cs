@@ -210,11 +210,12 @@ public class WsPacketHandler
                 case "BALLISTIC":
                 {
                     await _db.ExecuteAsync(
-                        "INSERT INTO ballistic (raidId, time, profileId, weaponId, ammoId, hitPlayerId, source, target) VALUES ($raidId, $time, $profileId, $weaponId, $ammoId, $hitPlayerId, $source, $target)",
+                        "INSERT INTO ballistic (raidId, time, profileId, weaponId, weaponName, ammoId, hitPlayerId, source, target) VALUES ($raidId, $time, $profileId, $weaponId, $weaponName, $ammoId, $hitPlayerId, $source, $target)",
                         ("$raidId", raidId!),
                         ("$time", GetString(payload, "time")),
                         ("$profileId", GetString(payload, "profileId")),
                         ("$weaponId", GetString(payload, "weaponId")),
+                        ("$weaponName", GetString(payload, "weaponName")),
                         ("$ammoId", GetString(payload, "ammoId")),
                         ("$hitPlayerId", GetString(payload, "hitPlayerId")),
                         ("$source", GetString(payload, "source")),
@@ -251,14 +252,68 @@ public class WsPacketHandler
                 case "LOOT":
                 {
                     await _db.ExecuteAsync(
-                        "INSERT INTO looting (raidId, profileId, time, qty, itemId, itemName, added) VALUES ($raidId, $profileId, $time, $qty, $itemId, $itemName, $added)",
+                        "INSERT INTO looting (raidId, profileId, time, qty, itemId, itemName, added, templateId, price, x, y, z) VALUES ($raidId, $profileId, $time, $qty, $itemId, $itemName, $added, $templateId, $price, $x, $y, $z)",
                         ("$raidId", raidId!),
                         ("$profileId", GetString(payload, "profileId")),
                         ("$time", GetString(payload, "time")),
                         ("$qty", GetString(payload, "qty")),
                         ("$itemId", GetString(payload, "itemId")),
                         ("$itemName", GetString(payload, "itemName")),
-                        ("$added", GetString(payload, "added")));
+                        ("$added", GetString(payload, "added")),
+                        ("$templateId", GetString(payload, "templateId")),
+                        ("$price", GetString(payload, "price")),
+                        ("$x", GetString(payload, "x")),
+                        ("$y", GetString(payload, "y")),
+                        ("$z", GetString(payload, "z")));
+                    break;
+                }
+
+                case "LOOSE_LOOT":
+                {
+                    if (raidId == null) break;
+                    if (payload.TryGetProperty("items", out var itemsArr) && itemsArr.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var item in itemsArr.EnumerateArray())
+                        {
+                            await _db.ExecuteAsync(
+                                @"INSERT OR IGNORE INTO loose_loot (raidId, itemId, templateId, itemName, price, qty, x, y, z, inContainer, containerName)
+                                  VALUES ($raidId, $itemId, $templateId, $itemName, $price, $qty, $x, $y, $z, $inContainer, $containerName)",
+                                ("$raidId", raidId!),
+                                ("$itemId", GetString(item, "itemId")),
+                                ("$templateId", GetString(item, "templateId")),
+                                ("$itemName", GetString(item, "itemName")),
+                                ("$price", GetString(item, "price")),
+                                ("$qty", GetString(item, "qty")),
+                                ("$x", GetString(item, "x")),
+                                ("$y", GetString(item, "y")),
+                                ("$z", GetString(item, "z")),
+                                ("$inContainer", item.TryGetProperty("inContainer", out var ic) && ic.GetBoolean() ? "1" : "0"),
+                                ("$containerName", GetString(item, "containerName")));
+                        }
+                    }
+                    break;
+                }
+
+                case "PLAYER_INVENTORY":
+                {
+                    if (raidId == null) break;
+                    var profileId2 = GetString(payload, "profileId");
+                    if (payload.TryGetProperty("items", out var invArr) && invArr.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var item in invArr.EnumerateArray())
+                        {
+                            await _db.ExecuteAsync(
+                                @"INSERT INTO player_inventory (raidId, profileId, templateId, itemName, price, qty, slot)
+                                  VALUES ($raidId, $profileId, $templateId, $itemName, $price, $qty, $slot)",
+                                ("$raidId", raidId!),
+                                ("$profileId", profileId2),
+                                ("$templateId", GetString(item, "templateId")),
+                                ("$itemName", GetString(item, "itemName")),
+                                ("$price", GetString(item, "price")),
+                                ("$qty", GetString(item, "qty")),
+                                ("$slot", GetString(item, "slot")));
+                        }
+                    }
                     break;
                 }
             }

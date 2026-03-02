@@ -10,7 +10,7 @@ public class GarbageCollector
     private readonly DataFileService _fileService;
     private readonly RaidReviewLogger _logger;
     private readonly RaidReviewConfig _config;
-    private const string ActiveVersion = "V3";
+    private const string ActiveVersion = "V4";
 
     public GarbageCollector(DatabaseService db, DataFileService fileService, RaidReviewLogger logger, RaidReviewConfig config)
     {
@@ -86,7 +86,7 @@ public class GarbageCollector
 
     private async Task DeleteRaidDataAsync(string raidId)
     {
-        foreach (var table in new[] { "raid", "kills", "looting", "player", "player_status", "ballistic" })
+        foreach (var table in new[] { "raid", "kills", "looting", "player", "player_status", "ballistic", "loose_loot", "player_inventory" })
         {
             await _db.ExecuteAsync($"DELETE FROM {table} WHERE raidId = $raidId",
                 ("$raidId", raidId));

@@ -7,7 +7,7 @@ namespace RaidReview.PostRaid;
 
 public class RaidPositionCompiler
 {
-    private const string ActiveStructureVersion = "V3";
+    private const string ActiveStructureVersion = "V4";
     private readonly DataFileService _fileService;
     private readonly RaidReviewLogger _logger;
 
@@ -69,6 +69,7 @@ public class RaidPositionCompiler
                     case "raid_id": entry.RaidId = val; break;
                     case "health": if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out var h)) entry.Health = h; break;
                     case "maxHealth": if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out var mh)) entry.MaxHealth = mh; break;
+                    case "decision": entry.Decision = val; break;
                 }
             }
             allPositions.Add(entry);

@@ -210,6 +210,58 @@ public class DatabaseService : IDisposable
                 DROP TABLE player_status;
                 ALTER TABLE player_status_new RENAME TO player_status;
             "),
+            ("add_ballistic_weapon_name", @"
+                ALTER TABLE ballistic ADD COLUMN ""weaponName"" TEXT DEFAULT '';
+            "),
+            ("add_loot_price_columns", @"
+                ALTER TABLE looting ADD COLUMN ""templateId"" TEXT DEFAULT '';
+                ALTER TABLE looting ADD COLUMN ""price"" INTEGER DEFAULT 0;
+            "),
+            ("add_loose_loot_table", @"
+                CREATE TABLE IF NOT EXISTS loose_loot (
+                    ""id"" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ""raidId"" TEXT NOT NULL,
+                    ""templateId"" TEXT NOT NULL,
+                    ""itemName"" TEXT NOT NULL,
+                    ""price"" INTEGER DEFAULT 0,
+                    ""qty"" INTEGER DEFAULT 1,
+                    ""x"" REAL NOT NULL,
+                    ""y"" REAL NOT NULL,
+                    ""z"" REAL NOT NULL,
+                    ""inContainer"" INTEGER DEFAULT 0,
+                    ""created_at"" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (""raidId"") REFERENCES raid(""raidId"")
+                );
+            "),
+            ("add_loose_loot_item_id", @"
+                ALTER TABLE loose_loot ADD COLUMN ""itemId"" TEXT DEFAULT '';
+                ALTER TABLE loose_loot ADD COLUMN ""containerName"" TEXT DEFAULT '';
+            "),
+            ("add_player_inventory_table", @"
+                CREATE TABLE IF NOT EXISTS player_inventory (
+                    ""id"" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ""raidId"" TEXT NOT NULL,
+                    ""profileId"" TEXT NOT NULL,
+                    ""templateId"" TEXT NOT NULL,
+                    ""itemName"" TEXT NOT NULL,
+                    ""price"" INTEGER DEFAULT 0,
+                    ""qty"" INTEGER DEFAULT 1,
+                    ""slot"" TEXT DEFAULT '',
+                    ""created_at"" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (""raidId"") REFERENCES raid(""raidId"")
+                );
+            "),
+            ("add_loot_position_columns", @"
+                ALTER TABLE looting ADD COLUMN ""x"" REAL DEFAULT 0;
+                ALTER TABLE looting ADD COLUMN ""y"" REAL DEFAULT 0;
+                ALTER TABLE looting ADD COLUMN ""z"" REAL DEFAULT 0;
+            "),
+            ("add_loose_loot_unique_index", @"
+                DELETE FROM loose_loot WHERE rowid NOT IN (
+                    SELECT MIN(rowid) FROM loose_loot GROUP BY raidId, itemId
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_loose_loot_raid_item ON loose_loot(""raidId"", ""itemId"");
+            "),
         };
 
         foreach (var (name, sql) in migrations)

@@ -11,6 +11,7 @@ import RaidMap, { loader as RaidMapLoader } from "./pages/V2/RaidMap";
 import RaidCharts from "./pages/V2/RaidCharts";
 import RaidTimeline from "./pages/V2/RaidTimeline";
 import RaidSettings, { loader as RaidSettingsLoader } from "./pages/V2/RaidSettings";
+import RaidBehaviorTimeline, { loader as RaidBehaviorTimelineLoader } from "./pages/V2/RaidBehaviorTimeline";
 
 const v2_routes = [
   {
@@ -44,7 +45,12 @@ const v2_routes = [
             element: <RaidMap />,
             loader: RaidMapLoader
           },
-          { 
+          {
+            path: "/raid/:raidId/behavior",
+            element: <RaidBehaviorTimeline />,
+            loader: RaidBehaviorTimelineLoader
+          },
+          {
             path: "/raid/:raidId/settings",
             element: <RaidSettings />,
             loader: RaidSettingsLoader

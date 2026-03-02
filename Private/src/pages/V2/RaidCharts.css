@@ -9,3 +9,25 @@
     grid-column-gap: 16px;
     grid-row-gap: 0px;
 }
+
+.difficulty-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-gap: 12px;
+}
+
+/* Prevent SVG label text from being clipped */
+.pie-wrapper,
+.difficulty-grid > div {
+    overflow: visible;
+}
+
+.pie-wrapper .recharts-wrapper,
+.difficulty-grid .recharts-wrapper {
+    overflow: visible !important;
+}
+
+.pie-wrapper svg,
+.difficulty-grid svg {
+    overflow: visible;
+}

@@ -152,6 +152,15 @@ const api = {
         } catch (error) {
             return heatmapData;
         }
+    },
+
+    getRaidLooseLoot : async function(raidId: string) : Promise<any[]> {
+        try {
+            const response = await fetch(hostname + `/api/raids/${raidId}/loose_loot`);
+            return await response.json();
+        } catch (error) {
+            return [];
+        }
     }
 }
 

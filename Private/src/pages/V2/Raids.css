@@ -18,13 +18,77 @@ tbody tr:nth-child(even) {
     width: 200px;
 }
 
-#raid-leaderboard tbody tr td:nth-of-type(1), #raid-leaderboard tbody tr td:nth-of-type(2), #raid-leaderboard tbody tr td:nth-of-type(3),
-#raid-leaderboard tbody tr td:nth-of-type(6), #raid-leaderboard tbody tr td:nth-of-type(7), #raid-leaderboard tbody tr td:nth-of-type(8) {
+/* Leaderboard: override alternating rows — rely on group tinting instead */
+#raid-leaderboard tbody tr:nth-child(even) {
+    background: transparent;
+}
+
+/* 10-column layout widths */
+#raid-leaderboard tbody tr td:nth-of-type(1) {
+    width: 90px;
+}
+
+#raid-leaderboard tbody tr td:nth-of-type(2),
+#raid-leaderboard tbody tr td:nth-of-type(3) {
+    width: 50px;
+}
+
+#raid-leaderboard tbody tr td:nth-of-type(5) {
+    width: 70px;
+}
+
+#raid-leaderboard tbody tr td:nth-of-type(7),
+#raid-leaderboard tbody tr td:nth-of-type(8) {
     width: 50px;
 }
 
 #raid-leaderboard tbody tr td:nth-of-type(9) {
+    width: 100px;
+}
+
+#raid-leaderboard tbody tr td:nth-of-type(10) {
     width: 105px;
+}
+
+/* Player's own row highlight */
+.leaderboard-player-row {
+    border-left: 3px solid #9a8866 !important;
+    background: rgba(154, 136, 102, 0.12) !important;
+}
+
+/* Alternating group tint */
+.leaderboard-group-alt {
+    background: rgba(154, 136, 102, 0.06);
+}
+
+.leaderboard-group-alt.leaderboard-player-row {
+    background: rgba(154, 136, 102, 0.15) !important;
+}
+
+/* Kill highlight: row click interaction */
+#raid-leaderboard tbody tr {
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.leaderboard-selected {
+    outline: 1px solid #9a8866;
+    background: rgba(154, 136, 102, 0.18) !important;
+}
+
+.leaderboard-victim {
+    border-left: 3px solid #22C55E !important;
+    background: rgba(34, 197, 94, 0.08) !important;
+}
+
+.leaderboard-killer {
+    border-left: 3px solid #EF4444 !important;
+    background: rgba(239, 68, 68, 0.08) !important;
+}
+
+/* Sort header hover */
+#raid-leaderboard thead th.cursor-pointer:hover {
+    background: rgba(0, 0, 0, 0.15);
 }
 
 #raid-overview input[type="checkbox"] {
@@ -35,3 +99,5 @@ tbody tr:nth-child(even) {
 .raid-timeline li {
     list-style: none;
 }
+#raid-timeline tbody tr { transition: background 0.1s; }
+#raid-timeline tbody tr:hover { background: rgba(154,136,102,0.15); }

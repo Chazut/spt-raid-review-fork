@@ -19,6 +19,7 @@ export interface TrackingPositionalData {
   y: Number
   z: Number
   dir: Number
+  decision?: string
   created_at: Date
 }
 
@@ -40,6 +41,7 @@ export interface TrackingRaidData {
   kills?: TrackingRaidDataKills[]
   ballistic?: TrackingBallistic[]
   looting?: TrackingRaidDataLoot[]
+  player_inventory?: TrackingPlayerInventoryItem[]
 }
 
 export interface TrackingRaidDataPlayers {
@@ -69,10 +71,17 @@ export interface TrackingRaidDataLoot {
   profileId: string
   time: number
   id: string
+  itemId: string
   name: string
+  itemName: string
   qty: string
   type: string
   added: string
+  templateId?: string
+  price?: number
+  x?: number
+  y?: number
+  z?: number
 }
 
 export interface TrackingPlayerStatus {
@@ -87,10 +96,33 @@ export interface TrackingBallistic {
   profileId: string;
   time: number;
   weaponId: string;
+  weaponName?: string;
   ammoId: string;
   hitPlayerId: string;
   source: string;
   target: string;
+}
+
+export interface TrackingLooseLootItem {
+  itemId: string
+  templateId: string
+  itemName: string
+  price: number
+  qty: number
+  x: number
+  y: number
+  z: number
+  inContainer: boolean | number
+  containerName: string
+}
+
+export interface TrackingPlayerInventoryItem {
+  profileId: string
+  templateId: string
+  itemName: string
+  price: number
+  qty: number
+  slot: string
 }
 
 export interface RaidReviewServerSettings {
