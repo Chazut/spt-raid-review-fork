@@ -29,11 +29,26 @@ namespace RAID_REVIEW
 
                 Logger.LogInfo("RAID_REVIEW :::: INFO :::: RAID Settings Loaded");
 
+                // Ensure sessionId is set (CurrentProfileId can be null on Fika headless clients)
+                if (RAID_REVIEW.sessionId == null)
+                {
+                    RAID_REVIEW.sessionId = RAID_REVIEW.gameWorld?.CurrentProfileId?.ToString()
+                                            ?? RAID_REVIEW.myPlayer?.ProfileId
+                                            ?? __instance.MainPlayer?.ProfileId;
+                }
+
                 // Check for installed mods
                 Integrations.ModCheck();
 
                 RAID_REVIEW.stopwatch.Reset();
                 RAID_REVIEW.stopwatch.Start();
+
+                // Determine raid type — myPlayer may be null on Fika headless clients
+                string raidType = "PMC";
+                if (RAID_REVIEW.myPlayer != null)
+                {
+                    raidType = RAID_REVIEW.myPlayer.Side == EPlayerSide.Savage ? "SCAV" : "PMC";
+                }
 
                 RAID_REVIEW.trackingRaid = new TrackingRaid
                 {
@@ -42,26 +57,30 @@ namespace RAID_REVIEW
                     time = DateTime.Now,
                     detectedMods = RAID_REVIEW.RAID_REVIEW__DETECTED_MODS.Count > 0 ? string.Join(",", RAID_REVIEW.RAID_REVIEW__DETECTED_MODS) : "",
                     location = RAID_REVIEW.gameWorld.LocationId,
-                    type = RAID_REVIEW.myPlayer.Side == EPlayerSide.Savage ? "SCAV" : "PMC",
+                    type = raidType,
                     timeInRaid = RAID_REVIEW.stopwatch.IsRunning ? RAID_REVIEW.stopwatch.ElapsedMilliseconds : 0
                 };
                 Telemetry.Send("START", JsonConvert.SerializeObject(RAID_REVIEW.trackingRaid));
 
-                var newTrackingPlayer = new TrackingPlayer
+                // Only register main player if present (headless has no main player)
+                if (RAID_REVIEW.myPlayer != null)
                 {
-                    sessionId = RAID_REVIEW.sessionId,
-                    profileId = RAID_REVIEW.myPlayer.ProfileId,
-                    name = RAID_REVIEW.myPlayer.Profile.Nickname,
-                    level = RAID_REVIEW.myPlayer.Profile.Info.Level,
-                    team = RAID_REVIEW.myPlayer.Side,
-                    group = 0,
-                    spawnTime = RAID_REVIEW.stopwatch.ElapsedMilliseconds,
-                    type = "HUMAN",
-                    mod_SAIN_brain = "PLAYER",
-                    mod_SAIN_difficulty = ""
-                };
-                RAID_REVIEW.trackingPlayers[newTrackingPlayer.profileId] = newTrackingPlayer;
-                Telemetry.Send("PLAYER", JsonConvert.SerializeObject(newTrackingPlayer));
+                    var newTrackingPlayer = new TrackingPlayer
+                    {
+                        sessionId = RAID_REVIEW.sessionId,
+                        profileId = RAID_REVIEW.myPlayer.ProfileId,
+                        name = RAID_REVIEW.myPlayer.Profile.Nickname,
+                        level = RAID_REVIEW.myPlayer.Profile.Info.Level,
+                        team = RAID_REVIEW.myPlayer.Side,
+                        group = 0,
+                        spawnTime = RAID_REVIEW.stopwatch.ElapsedMilliseconds,
+                        type = "HUMAN",
+                        mod_SAIN_brain = "PLAYER",
+                        mod_SAIN_difficulty = ""
+                    };
+                    RAID_REVIEW.trackingPlayers[newTrackingPlayer.profileId] = newTrackingPlayer;
+                    Telemetry.Send("PLAYER", JsonConvert.SerializeObject(newTrackingPlayer));
+                }
 
                 RAID_REVIEW.inRaid = true;
                 RAID_REVIEW.ResetLooseLootFlag();
@@ -69,7 +88,7 @@ namespace RAID_REVIEW
 
                 if (RAID_REVIEW.RecordingNotification.Value && RAID_REVIEW.WebSocketConnected)
                 {
-                    NotificationManagerClass.DisplayMessageNotification("Raid Review Recording Started", ENotificationDurationType.Long);
+                    try { NotificationManagerClass.DisplayMessageNotification("Raid Review Recording Started", ENotificationDurationType.Long); } catch { }
                 }
 
                 if (RAID_REVIEW.SOLARINT_SAIN__DETECTED)

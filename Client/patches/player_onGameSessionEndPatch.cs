@@ -33,7 +33,9 @@ namespace RAID_REVIEW
                 RAID_REVIEW.trackingRaid.exitName = exitName;
                 RAID_REVIEW.trackingRaid.time = DateTime.Now;
                 RAID_REVIEW.trackingRaid.timeInRaid = RAID_REVIEW.stopwatch.ElapsedMilliseconds;
-                RAID_REVIEW.trackingRaid.type = RAID_REVIEW.myPlayer.Side == EPlayerSide.Savage ? "SCAV" : "PMC";
+                // Use trackingRaid.type already set at raid start (myPlayer may be null on headless)
+                if (RAID_REVIEW.myPlayer != null)
+                    RAID_REVIEW.trackingRaid.type = RAID_REVIEW.myPlayer.Side == EPlayerSide.Savage ? "SCAV" : "PMC";
                 RAID_REVIEW.stopwatch.Reset();
 
                 BotChecker.BotCheckLoop(true);
