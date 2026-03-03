@@ -222,7 +222,7 @@ export default function RaidBehaviorTimeline() {
     if (playerRows.length === 0) {
         return (
             <div className="p-4 text-eft text-center opacity-50" style={{ fontSize: '14px' }}>
-                No behavior data available. Play a raid with the updated 1.0.0 mod to capture bot decisions.
+                No behavior data available. Play a raid with the updated mod to capture bot decisions.
             </div>
         )
     }
