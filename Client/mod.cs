@@ -568,22 +568,48 @@ namespace RAID_REVIEW
 
                     }
 
-                    // IF MAP NOT LOADED, RETURN
+                    // IF MAP NOT LOADED — check if raid ended without OnGameSessionEnd (headless)
                     if (!MapLoaded())
+                    {
+                        if (inRaid)
+                        {
+                            try
+                            {
+                                tracking = false;
+                                inRaid = false;
+                                stopwatch.Stop();
+                                trackingRaid.exitName = trackingRaid.exitName ?? "UNKNOWN";
+                                trackingRaid.time = DateTime.Now;
+                                trackingRaid.timeInRaid = stopwatch.ElapsedMilliseconds;
+
+                                BotChecker.BotCheckLoop(true);
+                                if (SOLARINT_SAIN__DETECTED) _ = SAIN_Integration.CheckForSainComponents(true);
+                                Telemetry.Send("PLAYER_CHECK", JsonConvert.SerializeObject(trackingPlayers.Values));
+                                Telemetry.Send("END", JsonConvert.SerializeObject(trackingRaid));
+                            }
+                            catch { }
+                            finally
+                            {
+                                trackingPlayers = new Dictionary<string, TrackingPlayer>();
+                                sessionId = null;
+                                stopwatch.Reset();
+                            }
+                        }
                         continue;
+                    }
 
                     gameWorld = Singleton<GameWorld>.Instance;
-                    myPlayer = gameWorld?.MainPlayer;
+                    myPlayer = gameWorld?.MainPlayer; // null on Fika headless — that's OK
 
-                    // IF IN MENU, RETURN
-                    if (gameWorld == null || myPlayer == null || gameWorld.LocationId == "hideout")
+                    // IF IN MENU, RETURN (don't require myPlayer — headless has none)
+                    if (gameWorld == null || gameWorld.LocationId == "hideout")
                     {
                         continue;
                     }
 
-                    if (sessionId == null && gameWorld != null && myPlayer != null && gameWorld.CurrentProfileId != null)
+                    if (sessionId == null && gameWorld != null)
                     {
-                        sessionId = gameWorld.CurrentProfileId.ToString();
+                        sessionId = gameWorld.CurrentProfileId?.ToString() ?? myPlayer?.ProfileId;
                     }
 
                     // IF RAID HAS NOT STARTED, RETURN
