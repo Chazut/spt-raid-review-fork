@@ -59,7 +59,7 @@ if [ -z "$output_path" ]; then
 fi
 echo "  Client mod output path: $output_path"
 
-# 4. Gather files into structure for distribution and create ZIP archives.
+# 4. Gather files for each architecture into the required structure for distribution and create ZIP archives.
 # - a. Copy the server mod files for the architecture into the appropriate structure for an SPT server mod (specified in the server_mod_structure variable below)
 #     - The server mod files include the main mod DLL and any additional DLLs or native libraries it depends on (except those already included in SPT server).
 # - b. Copy the client mod DLL into the appropriate structure for an SPT client mod (specified in the client_mod_structure variable below).
@@ -77,8 +77,10 @@ for arch in "${ARCH_ARRAY[@]}"; do
     mkdir -p $server_dest
     cp -r "ServerMod/bin/Release/RaidReview/$arch/"/* "$server_dest/"
 
-    # Remove unnecessary files
-    find "$server_dest" -type f ! \( -name "*.dll" -o -name "*.so" -o -name "*.dylib" \) -delete
+    # Remove unnecessary files (keep server libs + config)
+    find "$server_dest" -type f ! -path "$server_dest/config/*" ! \( -name "*.dll" -o -name "*.so" -o -name "*.dylib" \) -delete
+    # Remove native runtime DLLs from the root folder to avoid the SPT mod loader treating them as managed assemblies. Keeps .so/.dylib for Linux/macOS.
+    rm -f "$server_dest"/e_sqlite3.dll "$server_dest"/libe_sqlite3.dll
     find "$server_dest" \( -name "SPTarkov.*" -o -name "SemanticVersioning.*" -o -name "JetBrains.*" \) -delete
 
     # 4b. Copy the client mod to each architecture distribution folder.
