@@ -24,8 +24,8 @@ IFS=',' read -ra ARCH_ARRAY <<< "$target_archs"
 
 clear
 
+rm -rf dist/*
 dist_folder="dist/${name}_${version}"
-rm -rf "$dist_folder"
 
 # 1. Build frontend
 echo ">> Building frontend..."
@@ -60,11 +60,11 @@ fi
 echo "  Client mod output path: $output_path"
 
 # 4. Gather files into structure for distribution and create ZIP archives.
-# - a. Copy the server mod files for each architecture into the appropriate structure for SPT server mods.
+# - a. Copy the server mod files for the architecture into the appropriate structure for an SPT server mod (specified in the server_mod_structure variable below)
 #     - The server mod files include the main mod DLL and any additional DLLs or native libraries it depends on (except those already included in SPT server).
-# - b. Copy server mod config for each architecture (same config for all architectures, but we want it in each distribution)
-# - c. Copy the client mod DLL into the appropriate structure for SPT client mods.
-# - d. Create a ZIP archive for each architecture.
+# - b. Copy the client mod DLL into the appropriate structure for an SPT client mod (specified in the client_mod_structure variable below).
+#     - The client mod is the same for all architectures, but we want it included in each distribution ZIP.
+# - c. Create a ZIP archive for each architecture.
 server_mod_structure="SPT/user/mods/RaidReview"
 client_mod_structure="BepInEx/plugins"
 
@@ -75,31 +75,19 @@ for arch in "${ARCH_ARRAY[@]}"; do
     echo "  Copying $arch server mod files for distribution..."
     server_dest="$dist_folder/$arch/$server_mod_structure"
     mkdir -p $server_dest
-    
-    src_dir="ServerMod/bin/Release/RaidReview/$arch/"
-    find "$src_dir" -type f \( -name "*.dll" -o -name "*.so" -o -name "*.dylib" \) -exec cp {} "$server_dest/" \;
+    cp -r "ServerMod/bin/Release/RaidReview/$arch/"/* "$server_dest/"
 
-    # Copy DLLs flat (must be next to RaidReview.dll — .NET resolves them before any mod code runs)
-    for f in ServerMod/bin/Release/RaidReview/$arch/*.dll; do
-        base=$(basename "$f")
-        case "$base" in
-            SPTarkov.*|SemanticVersioning.*|JetBrains.*) continue ;;   # Already in SPT server
-            *) cp "$f" "$server_dest/" ;;
-        esac
-    done
+    # Remove unnecessary files
+    find "$server_dest" -type f ! \( -name "*.dll" -o -name "*.so" -o -name "*.dylib" \) -delete
+    find "$server_dest" \( -name "SPTarkov.*" -o -name "SemanticVersioning.*" -o -name "JetBrains.*" \) -delete
 
-    # 4b. Copy server mod config
-    echo "  Copying server mod config for $arch distribution..."
-    mkdir -p "$server_dest/config"
-    cp "ServerMod/config/config.json" "$server_dest/config/"
-
-    # 4c. Copy the client mod to each architecture distribution folder. The client mod is the same for all architectures, but we want it in each distribution
+    # 4b. Copy the client mod to each architecture distribution folder.
     echo "  Copying client mod files for $arch distribution..."
     client_dest="$dist_folder/$arch/$client_mod_structure"
-    mkdir -p "$client_dest"
+    mkdir -p $client_dest
     cp "$output_path"/RAID_REVIEW.dll "$client_dest/"
 
-    # 4d Create ZIP archive
+    # 4c. Create ZIP archive
     echo "  Creating archive for $arch distribution..."
     cd "$dist_folder/$arch"
     powershell -Command "Compress-Archive -Force -Path '*' -DestinationPath \"../../${name}__${version}__${arch}.zip\"" > /dev/null
@@ -108,7 +96,7 @@ done
 
 # 5. Cleanup
 echo ">> Cleaning up temporary distribution folders..."
-# rm -rf "$dist_folder"
+rm -rf "$dist_folder"
 
 echo ""
 echo "Finished! The following archives were created and are ready to be published:"
