@@ -9,7 +9,18 @@ public class DatabaseService : IDisposable
 
     public async Task InitializeAsync(string dataFolder)
     {
-        SQLitePCL.Batteries_V2.Init(); // Use winsqlite3.dll from Windows System32 — no native bundling needed
+        // Add the native runtimes folder to PATH so P/Invoke can find e_sqlite3
+        // (SPT loads mods as plugins, so .NET won't probe the mod folder automatically)
+        var modDir = Path.GetDirectoryName(typeof(DatabaseService).Assembly.Location)!;
+        var rid = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier;
+        var nativeDir = Path.Combine(modDir, "runtimes", rid, "native");
+        if (Directory.Exists(nativeDir))
+        {
+            var path = Environment.GetEnvironmentVariable("PATH") ?? "";
+            if (!path.Contains(nativeDir))
+                Environment.SetEnvironmentVariable("PATH", nativeDir + Path.PathSeparator + path);
+        }
+        SQLitePCL.Batteries_V2.Init();
         Directory.CreateDirectory(dataFolder);
         _dbPath = Path.Combine(dataFolder, "raid_review_mod.db");
 
