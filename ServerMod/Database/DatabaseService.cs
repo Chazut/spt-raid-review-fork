@@ -9,10 +9,11 @@ public class DatabaseService : IDisposable
 
     public async Task InitializeAsync(string dataFolder)
     {
-        // Add the native runtimes folder to PATH so P/Invoke can find e_sqlite3.dll
+        // Add the native runtimes folder to PATH so P/Invoke can find e_sqlite3
         // (SPT loads mods as plugins, so .NET won't probe the mod folder automatically)
         var modDir = Path.GetDirectoryName(typeof(DatabaseService).Assembly.Location)!;
-        var nativeDir = Path.Combine(modDir, "runtimes", "win-x64", "native");
+        var rid = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier;
+        var nativeDir = Path.Combine(modDir, "runtimes", rid, "native");
         if (Directory.Exists(nativeDir))
         {
             var path = Environment.GetEnvironmentVariable("PATH") ?? "";

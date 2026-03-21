@@ -43,13 +43,25 @@ echo ">> Packaging server mod..."
 server_dest="$dist_folder/SPT/user/mods/RaidReview"
 mkdir -p "$server_dest"
 
-# Copy DLLs flat (must be next to RaidReview.dll — .NET resolves them before any mod code runs)
+# Copy managed DLLs flat (must be next to RaidReview.dll — .NET resolves them before any mod code runs)
 for f in ServerMod/bin/Release/RaidReview/*.dll; do
     base=$(basename "$f")
     case "$base" in
         SPTarkov.*|SemanticVersioning.*|JetBrains.*) continue ;;   # Already in SPT server
         *) cp "$f" "$server_dest/" ;;
     esac
+done
+
+# Copy native SQLite runtimes (win-x64 + linux-x64) into runtimes subfolder
+# Must NOT be in the mod root — SPT mod loader would try to load them as managed assemblies
+build_runtimes="ServerMod/bin/Release/RaidReview/runtimes"
+for rid in win-x64 linux-x64; do
+    native_src="$build_runtimes/$rid/native"
+    if [ -d "$native_src" ]; then
+        mkdir -p "$server_dest/runtimes/$rid/native"
+        cp "$native_src"/* "$server_dest/runtimes/$rid/native/"
+        echo "  Copied native runtime: $rid"
+    fi
 done
 
 # Copy config
@@ -76,11 +88,11 @@ done
 # 6. Create ZIP
 echo ">> Creating distribution archive..."
 cd "$dist_folder"
-powershell -Command "Compress-Archive -Force -Path '*' -DestinationPath '../${name}__${version}_windows.zip'" > /dev/null
+powershell -Command "Compress-Archive -Force -Path '*' -DestinationPath '../${name}__${version}.zip'" > /dev/null
 cd "$current_dir"
 
 # Cleanup
 rm -rf "$dist_folder"
 
 echo ""
-echo "Finished! Archive: dist/${name}__${version}_windows.zip"
+echo "Finished! Archive: dist/${name}__${version}.zip"
