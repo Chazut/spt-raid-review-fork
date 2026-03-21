@@ -19,9 +19,9 @@
     <PackageReference Include="SPTarkov.Common" Version="4.0.5" ExcludeAssets="runtime" />
     <PackageReference Include="SPTarkov.DI" Version="4.0.5" ExcludeAssets="runtime" />
     <PackageReference Include="SPTarkov.Server.Core" Version="4.0.5" ExcludeAssets="runtime" />
-    <!-- SQLite — use winsqlite3.dll (built into Windows 10/11) to avoid native DLL path issues -->
+    <!-- SQLite — cross-platform bundle (e_sqlite3 works on Windows + Linux) -->
     <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="9.0.0" />
-    <PackageReference Include="SQLitePCLRaw.bundle_winsqlite3" Version="2.1.10" />
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.2" />
   </ItemGroup>
 
   <!-- Embed the React frontend INTO the DLL (avoids .js files in the mod folder,
@@ -45,6 +45,12 @@
                Exclude="$(OutputPath)SPTarkov.*;$(OutputPath)SemanticVersioning.*;$(OutputPath)JetBrains.*" />
     </ItemGroup>
     <Copy SourceFiles="@(ModDlls)" DestinationFolder="$(SptModDir)" SkipUnchangedFiles="true" />
+    <!-- Native SQLite binary — keep in runtimes subfolder so SPT doesn't try to load it as a managed assembly -->
+    <ItemGroup>
+      <NativeSqlite Include="$(OutputPath)runtimes\win-x64\native\e_sqlite3.dll" Condition="Exists('$(OutputPath)runtimes\win-x64\native\e_sqlite3.dll')" />
+    </ItemGroup>
+    <MakeDir Directories="$(SptModDir)\runtimes\win-x64\native" Condition="@(NativeSqlite) != ''" />
+    <Copy SourceFiles="@(NativeSqlite)" DestinationFolder="$(SptModDir)\runtimes\win-x64\native" SkipUnchangedFiles="true" />
     <!-- Config -->
     <Copy SourceFiles="config\config.json" DestinationFolder="$(SptModDir)\config" SkipUnchangedFiles="true" />
   </Target>
