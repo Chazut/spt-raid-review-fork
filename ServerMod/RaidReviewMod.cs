@@ -50,7 +50,7 @@ public class RaidReviewMod : IOnLoad
 
         // Database
         var db = new DatabaseService();
-        await db.InitializeAsync(dataFolder);
+        await db.InitializeAsync(dataFolder, msg => _sptLogger.Info(msg));
         logger.Log("Database initialized.");
 
         // File service

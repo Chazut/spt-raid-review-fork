@@ -1,3 +1,5 @@
+using System.Reflection;
+using System.Runtime.InteropServices;
 using Microsoft.Data.Sqlite;
 
 namespace RaidReview.Database;
@@ -6,20 +8,67 @@ public class DatabaseService : IDisposable
 {
     private SqliteConnection? _connection;
     private string _dbPath = string.Empty;
+    private static IntPtr _nativeSqliteHandle;
 
-    public async Task InitializeAsync(string dataFolder)
+    public async Task InitializeAsync(string dataFolder, Action<string>? log = null)
     {
-        // Add the native runtimes folder to PATH so P/Invoke can find e_sqlite3
-        // (SPT loads mods as plugins, so .NET won't probe the mod folder automatically)
+        // Pre-load the native e_sqlite3 library from the runtimes subfolder.
+        // SPT loads mods as plugins so .NET won't probe the mod folder automatically.
+        // On Linux, NativeLibrary.Load() alone isn't enough — the P/Invoke resolver in
+        // SQLitePCLRaw does its own dlopen("e_sqlite3") which doesn't find our loaded lib.
+        // We must register a DllImportResolver on the provider assembly to return our handle.
         var modDir = Path.GetDirectoryName(typeof(DatabaseService).Assembly.Location)!;
-        var rid = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier;
-        var nativeDir = Path.Combine(modDir, "runtimes", rid, "native");
-        if (Directory.Exists(nativeDir))
+        var runtimesDir = Path.Combine(modDir, "runtimes");
+        var rid = RuntimeInformation.RuntimeIdentifier;
+        var isWindows = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+
+        log?.Invoke($"[RAID-REVIEW] SQLite native loader: modDir={modDir}, rid={rid}, isWindows={isWindows}");
+        log?.Invoke($"[RAID-REVIEW] SQLite native loader: runtimesDir exists={Directory.Exists(runtimesDir)}");
+
+        if (Directory.Exists(runtimesDir))
         {
-            var path = Environment.GetEnvironmentVariable("PATH") ?? "";
-            if (!path.Contains(nativeDir))
-                Environment.SetEnvironmentVariable("PATH", nativeDir + Path.PathSeparator + path);
+            var libName = isWindows ? "e_sqlite3.dll" : "libe_sqlite3.so";
+
+            // Try the exact RID first, then fall back to generic win-x64 / linux-x64
+            var candidates = new List<string>();
+            if (!string.IsNullOrEmpty(rid))
+                candidates.Add(Path.Combine(runtimesDir, rid, "native", libName));
+            candidates.Add(Path.Combine(runtimesDir, isWindows ? "win-x64" : "linux-x64", "native", libName));
+
+            foreach (var candidate in candidates)
+            {
+                log?.Invoke($"[RAID-REVIEW] SQLite native loader: trying {candidate} (exists={File.Exists(candidate)})");
+                if (File.Exists(candidate))
+                {
+                    try
+                    {
+                        _nativeSqliteHandle = NativeLibrary.Load(candidate);
+                        log?.Invoke($"[RAID-REVIEW] SQLite native loader: loaded {candidate} (handle=0x{_nativeSqliteHandle:X})");
+                    }
+                    catch (Exception ex)
+                    {
+                        log?.Invoke($"[RAID-REVIEW] SQLite native loader: FAILED to load {candidate}: {ex.Message}");
+                        continue;
+                    }
+                    break;
+                }
+            }
+
+            // Register a DllImportResolver on the SQLitePCLRaw provider assembly so that
+            // when it P/Invokes "e_sqlite3", we return the handle we already loaded.
+            if (_nativeSqliteHandle != IntPtr.Zero)
+            {
+                var providerAssembly = typeof(SQLitePCL.SQLite3Provider_e_sqlite3).Assembly;
+                NativeLibrary.SetDllImportResolver(providerAssembly, (libraryName, assembly, searchPath) =>
+                {
+                    if (libraryName == "e_sqlite3")
+                        return _nativeSqliteHandle;
+                    return IntPtr.Zero;
+                });
+                log?.Invoke($"[RAID-REVIEW] SQLite native loader: DllImportResolver registered on {providerAssembly.GetName().Name}");
+            }
         }
+
         SQLitePCL.Batteries_V2.Init();
         Directory.CreateDirectory(dataFolder);
         _dbPath = Path.Combine(dataFolder, "raid_review_mod.db");
