@@ -1108,12 +1108,118 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         });
     }, [sliderTimes, timeCurrentIndex]);    
 
-    // Ballistics Update
+    // Ballistics Update (with grenade detection)
     let ballisticsLayers = new Map();
     useEffect(() => {
         if (hideBallistics) return;
         if (!mapIsReady || !MAP) return;
 
+        // Grenade visualization: detect throws from behavior decisions, match to ballistic clusters
+        // Step 1: Find grenade throw moments from position decisions
+        const grenadeThrows: { profileId: string, time: number, x: number, z: number }[] = []
+        const posData = positions as any
+        if (posData) {
+            for (const [profileId, pArr] of Object.entries(posData)) {
+                if (!Array.isArray(pArr)) continue
+                for (let pi = 0; pi < pArr.length; pi++) {
+                    const p = pArr[pi]
+                    const dec = (p.decision || '')
+                    const decLower = dec.toLowerCase()
+                    const isGrenadeDec = decLower.includes('throwgrenade') || decLower.includes('runandthrowgrenade') || decLower === 'sain:throwgrenade'
+                    if (!isGrenadeDec) continue
+                    // Only record the first tick of each throw sequence
+                    if (pi > 0) {
+                        const prevDec = (pArr[pi - 1].decision || '').toLowerCase()
+                        const prevIsGrenade = prevDec.includes('throwgrenade') || prevDec.includes('runandthrowgrenade') || prevDec === 'sain:throwgrenade'
+                        if (prevIsGrenade) continue
+                    }
+                    grenadeThrows.push({ profileId, time: Number(p.time), x: Number(p.x), z: Number(p.z) })
+                }
+            }
+        }
+
+        // Step 2: Build ballistic clusters (group by profileId + time)
+        const ballisticClusters: Record<string, { src: any, time: number, count: number, weaponName: string }> = {}
+        for (const b of raidData.ballistic) {
+            try {
+                const src = JSON.parse(b.source)
+                const key = `${b.profileId}_${b.time}`
+                if (!ballisticClusters[key]) {
+                    ballisticClusters[key] = { src, time: b.time, count: 0, weaponName: b.weaponName || '' }
+                }
+                ballisticClusters[key].count++
+            } catch {}
+        }
+
+        // Step 3: Match throws to explosion clusters (same bot, within 10s, 3+ fragments, source far from bot)
+        const grenadeExplosions: { throwTime: number, throwX: number, throwZ: number, explosionX: number, explosionZ: number, explosionTime: number, profileId: string, weaponName: string }[] = []
+        for (const gt of grenadeThrows) {
+            let bestKey = ''
+            let bestDt = Infinity
+            for (const [key, cluster] of Object.entries(ballisticClusters)) {
+                if (!key.startsWith(gt.profileId + '_')) continue
+                if (cluster.count < 3) continue
+                const dt = cluster.time - gt.time
+                if (dt < 0 || dt > 10000) continue
+                // Explosion source must be far from the bot's throw position (> 5m)
+                // If source is near the bot, it's regular gunfire, not a grenade landing
+                const dx = cluster.src.x - gt.x
+                const dz = cluster.src.z - gt.z
+                const distSq = dx * dx + dz * dz
+                if (distSq < 25) continue // 5m minimum distance
+                if (dt < bestDt) { bestDt = dt; bestKey = key }
+            }
+            if (bestKey) {
+                const cluster = ballisticClusters[bestKey]
+                grenadeExplosions.push({
+                    throwTime: gt.time, throwX: gt.x, throwZ: gt.z,
+                    explosionX: cluster.src.x, explosionZ: cluster.src.z,
+                    explosionTime: cluster.time, profileId: gt.profileId,
+                    weaponName: cluster.weaponName
+                })
+            }
+        }
+
+        // Render grenade arcs + explosion circles (alongside normal ballistics, not replacing them)
+        for (const ge of grenadeExplosions) {
+            const throwIndex = findInsertIndex(ge.throwTime, sliderTimes)
+            const explosionIndex = findInsertIndex(ge.explosionTime, sliderTimes)
+            if (throwIndex > timeCurrentIndex || explosionIndex + 40 < timeCurrentIndex) continue
+
+            const grenadeId = `grenade-${ge.profileId}-${ge.throwTime}`
+            if (ballisticsLayers.get(grenadeId)) continue
+
+            // Explosion circle
+            const explosionCircle = L.circle([ge.explosionZ, ge.explosionX], {
+                radius: 3, color: '#FF6B35', weight: 2,
+                fillColor: '#FF6B35', fillOpacity: 0.2, dashArray: '3 3',
+            })
+            explosionCircle.eventTime = ge.explosionTime
+            explosionCircle.eventType = 'ballisticsLine'
+            explosionCircle.eventId = grenadeId
+            const player = raidData?.players?.find(p => p.profileId === ge.profileId)
+            const throwerName = player?.name || ge.profileId.slice(0, 8)
+            explosionCircle.bindTooltip(
+                `\u{1F4A5} <strong>${throwerName}</strong> — ${ge.weaponName || 'Grenade'}`,
+                { direction: 'top', offset: [0, -8], className: 'player-tooltip player-tooltip-html' }
+            )
+            explosionCircle.addTo(MAP)
+
+            // Arc from throw position to explosion
+            const arcLine = L.polyline(
+                [[ge.throwZ, ge.throwX], [ge.explosionZ, ge.explosionX]],
+                { color: '#FF6B35', weight: 2.5, dashArray: '6 4', opacity: 0.8 }
+            )
+            arcLine.eventTime = ge.throwTime
+            arcLine.eventType = 'ballisticsLine'
+            arcLine.eventId = grenadeId + '_arc'
+            arcLine.addTo(MAP)
+
+            ballisticsLayers.set(grenadeId, true)
+            ballisticsLayers.set(grenadeId + '_arc', true)
+        }
+
+        // Render normal ballistics (all, including grenade fragments)
         const createdLayers = new Map();
         for (let i = 0; i < raidData.ballistic.length; i++) {
             const ballistic = raidData.ballistic[i];
@@ -1128,17 +1234,16 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 let ballisticsId = `${i}-${ballistic.time}-${source.z}-${source.x}-${target.z}-${target.x}`;
                 let exists = ballisticsLayers.get(ballisticsId);
 
-                let hit = !!ballistic.hitPlayerId;
                 if (!exists && (target && source)) {
                     const pickedColor = calculatedPlayerInfo[ballistic.profileId]?.pickedColor;
                     const position = [[source.z, source.x], [target.z, target.x]];
 
-                    const polyline = L.polyline(position, { 
-                        color: pickedColor ? pickedColor : 'red', 
-                        weight: 1, 
-                        opacity: 0.5, 
-                        fillOpacity: 0.5, 
-                        dashOffset: 2, 
+                    const polyline = L.polyline(position, {
+                        color: pickedColor ? pickedColor : 'red',
+                        weight: 1,
+                        opacity: 0.5,
+                        fillOpacity: 0.5,
+                        dashOffset: 2,
                         dashArray: [2, 6, 2]
                     });
                     polyline.eventTime = ballistic.time;
@@ -1146,10 +1251,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                     polyline.eventType = 'ballisticsLine';
                     polyline.eventId = ballisticsId;
 
-                    if (MAP) {
-                        polyline.addTo(MAP);
-                    }
-
+                    polyline.addTo(MAP);
                     ballisticsLayers.set(ballisticsId, true);
                 }
             }
