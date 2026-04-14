@@ -342,6 +342,22 @@ aside {
   background-image: url('/positional.png');
   background-size: contain;
 }
+/* Hit flash animation */
+@keyframes hitFlash {
+  0%   { opacity: 1; transform: scale(1); }
+  50%  { opacity: 0.8; transform: scale(1.5); }
+  100% { opacity: 0; transform: scale(0.5); }
+}
+.hit-flash-marker {
+  animation: hitFlash 0.8s ease-out forwards;
+  pointer-events: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ff0000 0%, rgba(255,0,0,0) 70%);
+  box-shadow: 0 0 6px 2px rgba(255, 0, 0, 0.6);
+}
+
 /* Loot float animation */
 @keyframes lootFloat {
   0%   { opacity: 1; transform: translateY(0); }

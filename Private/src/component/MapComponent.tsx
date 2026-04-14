@@ -301,6 +301,11 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     const [botQuestCollapsed, setBotQuestCollapsed] = useState(true)
     const botQuestLayerRef = useRef<L.LayerGroup | null>(null)
 
+    // Hit flash animations
+    const [showHitFlash, setShowHitFlash] = useState(() => localStorage.getItem('rr_showHitFlash') !== 'false')
+    const hitFlashTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+    const prevTimeHitRef = useRef<number>(0)
+
     // Loot float animations
     const [showLootFloats, setShowLootFloats] = useState(() => localStorage.getItem('rr_showLootFloats') !== 'false')
     const prevTimeEndLimitRef = useRef<number>(0)
@@ -1180,6 +1185,20 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             }
         }
 
+        // Clean up expired grenade layers
+        if (MAP) {
+            for (const key in MAP._layers) {
+                const layer = MAP._layers[key]
+                if (!layer._rr_grenade) continue
+                if (!layer.eventTime) continue
+                const idx = findInsertIndex(layer.eventTime, sliderTimes)
+                if (idx + 40 < timeCurrentIndex || idx > timeCurrentIndex) {
+                    MAP.removeLayer(layer)
+                    if (layer.eventId) ballisticsLayers.delete(layer.eventId)
+                }
+            }
+        }
+
         // Render grenade arcs + explosion circles (alongside normal ballistics, not replacing them)
         for (const ge of grenadeExplosions) {
             const throwIndex = findInsertIndex(ge.throwTime, sliderTimes)
@@ -1203,6 +1222,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 `\u{1F4A5} <strong>${throwerName}</strong> — ${ge.weaponName || 'Grenade'}`,
                 { direction: 'top', offset: [0, -8], className: 'player-tooltip player-tooltip-html' }
             )
+            explosionCircle._rr_grenade = true
             explosionCircle.addTo(MAP)
 
             // Arc from throw position to explosion
@@ -1213,6 +1233,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             arcLine.eventTime = ge.throwTime
             arcLine.eventType = 'ballisticsLine'
             arcLine.eventId = grenadeId + '_arc'
+            arcLine._rr_grenade = true
             arcLine.addTo(MAP)
 
             ballisticsLayers.set(grenadeId, true)
@@ -1319,6 +1340,9 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     useEffect(() => {
         localStorage.setItem('rr_showBotQuests', String(showBotQuests))
     }, [showBotQuests])
+    useEffect(() => {
+        localStorage.setItem('rr_showHitFlash', String(showHitFlash))
+    }, [showHitFlash])
 
     // Build set of picked-up item IDs before current timeline position
     const pickedUpItemIds = useMemo(() => {
@@ -1651,6 +1675,47 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         }
     }, [MAP, mapIsReady, showLootFloats, timeEndLimit, raidData?.looting])
 
+    // Hit flash animations: show a red flash when a bot/player gets hit
+    useEffect(() => {
+        if (!MAP || !mapIsReady || !showHitFlash) {
+            prevTimeHitRef.current = timeEndLimit
+            return
+        }
+
+        const prevTime = prevTimeHitRef.current
+        prevTimeHitRef.current = timeEndLimit
+
+        if (timeEndLimit <= prevTime) return
+        if (!raidData?.ballistic) return
+
+        const newHits = raidData.ballistic.filter(b => {
+            const t = Number(b.time)
+            return b.hitPlayerId && t > prevTime && t <= timeEndLimit
+        })
+
+        if (newHits.length === 0) return
+
+        for (const hit of newHits) {
+            try {
+                const target = JSON.parse(hit.target)
+                const icon = L.divIcon({
+                    className: '',
+                    html: `<div class="hit-flash-marker"></div>`,
+                    iconSize: [10, 10],
+                    iconAnchor: [5, 5],
+                })
+                const marker = L.marker([target.z, target.x], { icon, interactive: false, zIndexOffset: 3000 })
+                marker.addTo(MAP)
+
+                const timer = setTimeout(() => {
+                    if (MAP) MAP.removeLayer(marker)
+                    hitFlashTimersRef.current.delete(timer)
+                }, 900)
+                hitFlashTimersRef.current.add(timer)
+            } catch {}
+        }
+    }, [MAP, mapIsReady, showHitFlash, timeEndLimit, raidData?.ballistic])
+
     // Compute filtered loot stats (timeline-aware)
     const looseLootStats = useMemo(() => {
         if (looseLootData.length === 0) return { shown: 0, total: 0, ground: 0, container: 0 }
@@ -1867,8 +1932,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         for (const key in m._layers) {
             const layer = m._layers[key];
         
-            // Skip layers managed by other overlays (quests, loose loot, etc.)
-            if (layer._rr_quest || layer._rr_looseLoot) continue;
+            // Skip layers managed by other overlays (quests, loose loot, grenades, etc.)
+            if (layer._rr_quest || layer._rr_looseLoot || layer._rr_grenade) continue;
 
             // Remove polylines without eventType or not being ballisticsLine, circles, and special bot markers
             const isSpecialBotMarker = layer instanceof L.Marker && layer.options?.icon?.options?.className === 'special-bot-marker';
@@ -2310,6 +2375,15 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                             style={{ accentColor: '#9a8866' }}
                                         />
                                         <span>Loot animations</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '6px' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={showHitFlash}
+                                            onChange={() => setShowHitFlash(!showHitFlash)}
+                                            style={{ accentColor: '#9a8866' }}
+                                        />
+                                        <span>Hit animations</span>
                                     </label>
 
                                     <div style={{ marginBottom: '6px' }}>
