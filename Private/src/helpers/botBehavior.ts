@@ -14,6 +14,7 @@ export const BEHAVIOR_CATEGORIES: Record<string, BehaviorCategory> = {
     flee:     { key: 'flee',     label: 'Flee',     color: '#A855F7' },
     extract:  { key: 'extract',  label: 'Extract',  color: '#06B6D4' },
     grenade:  { key: 'grenade',  label: 'Grenade',  color: '#FF6B6B' },
+    quest:    { key: 'quest',    label: 'Quest',    color: '#00BFFF' },
     idle:     { key: 'idle',     label: 'Idle',     color: '#374151' },
     other:    { key: 'other',    label: 'Other',    color: '#6B7280' },
 }
@@ -86,6 +87,7 @@ const DECISION_TO_CATEGORY: Record<string, string> = {
 
 export function getBehaviorCategory(decision: string | undefined | null): BehaviorCategory {
     if (!decision || decision === '') return BEHAVIOR_CATEGORIES.idle
+    if (decision.startsWith('QB:')) return BEHAVIOR_CATEGORIES.quest
     const cleanDecision = decision.startsWith('SAIN:') ? decision.substring(5) : decision
     const categoryKey = DECISION_TO_CATEGORY[cleanDecision] ?? 'other'
     return BEHAVIOR_CATEGORIES[categoryKey]
@@ -93,6 +95,7 @@ export function getBehaviorCategory(decision: string | undefined | null): Behavi
 
 export function formatDecisionLabel(decision: string | undefined | null): string {
     if (!decision || decision === '') return ''
+    if (decision.startsWith('QB:')) return decision.substring(3)
     const clean = decision.startsWith('SAIN:') ? decision.substring(5) : decision
     // Convert camelCase to readable: "shootFromPlace" -> "Shoot From Place"
     return clean.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim()

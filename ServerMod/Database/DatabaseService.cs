@@ -322,6 +322,23 @@ public class DatabaseService : IDisposable
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_loose_loot_raid_item ON loose_loot(""raidId"", ""itemId"");
             "),
+            ("add_bot_quest_table", @"
+                CREATE TABLE IF NOT EXISTS bot_quest (
+                    ""id"" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ""raidId"" TEXT NOT NULL,
+                    ""profileId"" TEXT NOT NULL,
+                    ""time"" INTEGER NOT NULL,
+                    ""questName"" TEXT NOT NULL,
+                    ""isEFTQuest"" INTEGER DEFAULT 0,
+                    ""actionType"" TEXT NOT NULL DEFAULT '',
+                    ""status"" TEXT NOT NULL DEFAULT '',
+                    ""objectiveX"" REAL DEFAULT 0,
+                    ""objectiveY"" REAL DEFAULT 0,
+                    ""objectiveZ"" REAL DEFAULT 0,
+                    ""created_at"" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (""raidId"") REFERENCES raid(""raidId"")
+                );
+            "),
         };
 
         foreach (var (name, sql) in migrations)

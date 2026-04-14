@@ -295,6 +295,12 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     const looseLootLayerRef = useRef<L.LayerGroup | null>(null)
     const looseLootHighlightRef = useRef<L.CircleMarker | null>(null)
 
+    // Bot Quests (QuestingBots integration)
+    const [showBotQuests, setShowBotQuests] = useState(true)
+    const [botQuestData, setBotQuestData] = useState<any[]>([])
+    const [botQuestCollapsed, setBotQuestCollapsed] = useState(true)
+    const botQuestLayerRef = useRef<L.LayerGroup | null>(null)
+
     // Bot Inventory
     const [botInvCollapsed, setBotInvCollapsed] = useState(true)
     const [selectedBotProfileId, setSelectedBotProfileId] = useState<string>('')
@@ -1337,6 +1343,124 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         }
     }, [MAP, mapIsReady, showLooseLoot, looseLootData, looseLootMinPrice, looseLootFilter, pickedUpItemIds, raidData?.looting, timeEndLimit])
 
+    // Bot Quests: fetch data lazily when toggled on
+    useEffect(() => {
+        if (!showBotQuests) return
+        if (botQuestData.length > 0) return
+        ;(async () => {
+            const data = await api.getRaidBotQuests(raidId)
+            if (data && data.length > 0) {
+                setBotQuestData(data)
+            }
+        })()
+    }, [showBotQuests, raidId])
+
+    // Bot Quests: render objective markers on map (timeline-aware)
+    useEffect(() => {
+        if (!MAP || !mapIsReady) return
+
+        if (botQuestLayerRef.current) {
+            MAP.removeLayer(botQuestLayerRef.current)
+            botQuestLayerRef.current = null
+        }
+
+        if (!showBotQuests || botQuestData.length === 0) return
+
+        const group = L.layerGroup()
+
+        // Build a map of the latest quest state per bot at current timeline position
+        const latestByBot: Record<string, any> = {}
+        for (const q of botQuestData) {
+            const t = Number(q.time)
+            if (t > timeEndLimit) continue
+            const prev = latestByBot[q.profileId]
+            if (!prev || t > Number(prev.time)) {
+                latestByBot[q.profileId] = q
+            }
+        }
+
+        const actionIcons: Record<string, string> = {
+            'MoveToPosition': '\u{1F6B6}',    // walking
+            'HoldAtPosition': '\u{1F6D1}',    // stop sign
+            'Ambush': '\u{1F52B}',             // gun
+            'Snipe': '\u{1F3AF}',              // target
+            'PlantItem': '\u{1F4E6}',          // package
+            'ToggleSwitch': '\u{1F511}',       // key
+            'RequestExtract': '\u{1F6AA}',     // door
+            'CloseNearbyDoors': '\u{1F510}',   // lock
+        }
+
+        // Build set of dead bot profileIds at current timeline
+        const deadBots = new Set<string>()
+        if (raidData?.kills) {
+            for (const k of raidData.kills) {
+                if (Number(k.time) <= timeEndLimit) deadBots.add(k.killedId)
+            }
+        }
+
+        for (const [profileId, q] of Object.entries(latestByBot)) {
+            if (q.status === 'Completed' || q.status === 'Archived' || q.status === 'Failed') continue
+            if (deadBots.has(profileId)) continue
+            const x = Number(q.objectiveX)
+            const z = Number(q.objectiveZ)
+            if (x === 0 && z === 0) continue
+
+            // Find bot name from raid data
+            const player = raidData?.players?.find(p => p.profileId === profileId)
+            const botName = player ? (player.name || profileId) : profileId
+            const icon = actionIcons[q.actionType] || '\u2753' // question mark fallback
+            const isEFT = q.isEFTQuest === 1 || q.isEFTQuest === true
+
+            const marker = L.circleMarker([z, x], {
+                radius: 6,
+                color: isEFT ? '#FFD700' : '#00BFFF',
+                weight: 2,
+                fillColor: isEFT ? 'rgba(255,215,0,0.3)' : 'rgba(0,191,255,0.3)',
+                fillOpacity: 0.7,
+                interactive: true,
+            })
+
+            marker.bindTooltip(
+                `${icon} <strong>${botName}</strong><br/>${q.questName}<br/><em>${q.actionType}</em> (${q.status})${isEFT ? '<br/><span style="color:#FFD700">EFT Quest</span>' : ''}`,
+                { direction: 'top', offset: [0, -8], className: 'player-tooltip player-tooltip-html' }
+            )
+            group.addLayer(marker)
+
+            // Draw a dashed line from bot's current position to the objective
+            const posData = positions as any
+            if (posData && typeof posData === 'object') {
+                // positions is { profileId: [ {x, z, time, ...}, ... ] } or similar
+                // Try to find bot's position closest to current time
+                const botPositions = posData[profileId]
+                if (Array.isArray(botPositions) && botPositions.length > 0) {
+                    let closest = botPositions[0]
+                    for (const pos of botPositions) {
+                        if (Number(pos.time) <= timeEndLimit && Number(pos.time) >= Number(closest.time)) {
+                            closest = pos
+                        }
+                    }
+                    if (closest) {
+                        const line = L.polyline(
+                            [[Number(closest.z), Number(closest.x)], [z, x]],
+                            { color: isEFT ? '#FFD700' : '#00BFFF', weight: 1, dashArray: '4 4', opacity: 0.5 }
+                        )
+                        group.addLayer(line)
+                    }
+                }
+            }
+        }
+
+        group.addTo(MAP)
+        botQuestLayerRef.current = group
+
+        return () => {
+            if (botQuestLayerRef.current && MAP) {
+                MAP.removeLayer(botQuestLayerRef.current)
+                botQuestLayerRef.current = null
+            }
+        }
+    }, [MAP, mapIsReady, showBotQuests, botQuestData, timeEndLimit, raidData?.players, raidData?.kills, positions])
+
     // Compute filtered loot stats (timeline-aware)
     const looseLootStats = useMemo(() => {
         if (looseLootData.length === 0) return { shown: 0, total: 0, ground: 0, container: 0 }
@@ -2060,6 +2184,71 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                 </div>
                             )}
                         </div>
+
+                        {/* ── Bot Quests Section (QuestingBots) ── */}
+                        {botQuestData.length > 0 && (
+                            <div className="mt-4" style={{ borderTop: '1px solid rgba(154, 136, 102, 0.3)', paddingTop: '8px' }}>
+                                <div
+                                    className="flex items-center cursor-pointer"
+                                    style={{ fontSize: '14px' }}
+                                    onClick={() => setBotQuestCollapsed(!botQuestCollapsed)}
+                                >
+                                    <span style={{ marginRight: '4px', fontSize: '9px' }}>{botQuestCollapsed ? '\u25B6' : '\u25BC'}</span>
+                                    <strong>Bot Quests</strong>
+                                </div>
+                                {!botQuestCollapsed && (
+                                    <div style={{ marginTop: '6px', fontSize: '13px' }}>
+                                        <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '6px' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={showBotQuests}
+                                                onChange={() => setShowBotQuests(!showBotQuests)}
+                                                style={{ accentColor: '#9a8866' }}
+                                            />
+                                            <span>Show on map</span>
+                                        </label>
+                                        <div style={{ fontSize: '11px', opacity: 0.7, marginBottom: '4px' }}>
+                                            {botQuestData.length} quest events recorded
+                                        </div>
+                                        <div style={{ fontSize: '11px', marginBottom: '4px' }}>
+                                            <span style={{ color: '#FFD700', marginRight: '8px' }}>{'\u25CF'} EFT Quest</span>
+                                            <span style={{ color: '#00BFFF' }}>{'\u25CF'} QB Quest</span>
+                                        </div>
+                                        <div style={{ maxHeight: '250px', overflowY: 'auto', borderTop: '1px solid rgba(154,136,102,0.2)', paddingTop: '4px' }}>
+                                            {(() => {
+                                                // Show latest quest per bot at current timeline
+                                                const latestByBot: Record<string, any> = {}
+                                                for (const q of botQuestData) {
+                                                    if (Number(q.time) > timeEndLimit) continue
+                                                    const prev = latestByBot[q.profileId]
+                                                    if (!prev || Number(q.time) > Number(prev.time)) latestByBot[q.profileId] = q
+                                                }
+                                                return Object.entries(latestByBot)
+                                                    .filter(([, q]) => q.status !== 'Completed' && q.status !== 'Archived' && q.status !== 'Failed')
+                                                    .map(([profileId, q]) => {
+                                                        const player = raidData?.players?.find(p => p.profileId === profileId)
+                                                        const botName = player?.name || profileId.slice(0, 8)
+                                                        const isEFT = q.isEFTQuest === 1 || q.isEFTQuest === true
+                                                        return (
+                                                            <div key={profileId} style={{ padding: '2px 0', borderBottom: '1px solid rgba(154,136,102,0.1)' }}>
+                                                                <div style={{ fontSize: '12px' }}>
+                                                                    <strong>{botName}</strong>
+                                                                    <span style={{ color: isEFT ? '#FFD700' : '#00BFFF', marginLeft: '4px', fontSize: '10px' }}>
+                                                                        {isEFT ? 'EFT' : 'QB'}
+                                                                    </span>
+                                                                </div>
+                                                                <div style={{ fontSize: '11px', opacity: 0.7 }}>
+                                                                    {q.questName} — {q.actionType}
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    })
+                                            })()}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* ── Bot Inventory Section ── */}
                         {botsWithInventory.length > 0 && (

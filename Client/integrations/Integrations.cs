@@ -13,6 +13,12 @@ namespace RAID_REVIEW {
                     RAID_REVIEW.SOLARINT_SAIN__DETECTED = true;
                     RAID_REVIEW.RAID_REVIEW__DETECTED_MODS.Add("SAIN");
                 }
+                if (RAID_REVIEW.DetectMod("com.danw.questingbots"))
+                {
+                    LoggerInstance.Log.LogInfo("RAID_REVIEW :::: INFO :::: Found 'QuestingBots' Enabling Plugin Features for QuestingBots.");
+                    RAID_REVIEW.DANW_QUESTINGBOTS__DETECTED = true;
+                    RAID_REVIEW.RAID_REVIEW__DETECTED_MODS.Add("QUESTING_BOTS");
+                }
                 if (RAID_REVIEW.DetectMod("de.salco.themercenary"))
                 {
                     LoggerInstance.Log.LogInfo("RAID_REVIEW :::: INFO :::: Found 'THE MERCENARY'.");

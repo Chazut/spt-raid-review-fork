@@ -347,6 +347,20 @@ public class RaidReviewWebServer
             }
         });
 
+        app.MapGet("/api/raids/{raidId}/bot_quests", async (HttpContext context, string raidId) =>
+        {
+            try
+            {
+                var data = await _db.QueryAsync("SELECT * FROM bot_quest WHERE raidId = $id ORDER BY time ASC", ("$id", raidId));
+                await context.Response.WriteAsJsonAsync(data);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("[API:BOT_QUESTS]", ex);
+                context.Response.StatusCode = 500;
+            }
+        });
+
         app.MapGet("/api/raids/{raidId}/positions/heatmap", async (HttpContext context, string raidId) =>
         {
             var raw = _fileService.ReadFile("positions", "", "", $"{raidId}_{_compiler.ActiveVersion}_positions.json");

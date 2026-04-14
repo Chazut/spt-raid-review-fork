@@ -316,6 +316,25 @@ public class WsPacketHandler
                     }
                     break;
                 }
+
+                case "BOT_QUEST":
+                {
+                    if (raidId == null) break;
+                    await _db.ExecuteAsync(
+                        @"INSERT INTO bot_quest (raidId, profileId, time, questName, isEFTQuest, actionType, status, objectiveX, objectiveY, objectiveZ)
+                          VALUES ($raidId, $profileId, $time, $questName, $isEFTQuest, $actionType, $status, $objX, $objY, $objZ)",
+                        ("$raidId", raidId!),
+                        ("$profileId", GetString(payload, "profileId")),
+                        ("$time", GetString(payload, "time")),
+                        ("$questName", GetString(payload, "questName")),
+                        ("$isEFTQuest", payload.TryGetProperty("isEFTQuest", out var eft) && eft.GetBoolean() ? "1" : "0"),
+                        ("$actionType", GetString(payload, "actionType")),
+                        ("$status", GetString(payload, "status")),
+                        ("$objX", GetString(payload, "objectiveX")),
+                        ("$objY", GetString(payload, "objectiveY")),
+                        ("$objZ", GetString(payload, "objectiveZ")));
+                    break;
+                }
             }
         }
         catch (Exception ex)

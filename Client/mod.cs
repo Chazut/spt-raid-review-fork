@@ -23,8 +23,9 @@ using EFT.Interactive;
 
 namespace RAID_REVIEW
 {
-    [BepInPlugin("ekky.raidreview", "Raid Review", "1.0.2")]
+    [BepInPlugin("ekky.raidreview", "Raid Review", "1.0.3")]
     [BepInDependency("me.sol.sain", BepInDependency.DependencyFlags.SoftDependency)]
+    [BepInDependency("com.danw.questingbots", BepInDependency.DependencyFlags.SoftDependency)]
     public class RAID_REVIEW : BaseUnityPlugin
     {
         // Framerate
@@ -145,9 +146,12 @@ namespace RAID_REVIEW
         // Other Mods
         public static bool MODS_SEARCHED = false;
         public static bool SOLARINT_SAIN__DETECTED { get; set; }
+        public static bool DANW_QUESTINGBOTS__DETECTED { get; set; }
         public static object sainBotController { get; set; }
         public static bool searchingForSainComponents = false;
         public static Dictionary<string, TrackingPlayer> updatedBots = new Dictionary<string, TrackingPlayer>();
+        // QuestingBots: cache last sent quest+status per bot to avoid spamming unchanged data
+        public static Dictionary<string, string> _lastBotQuestState = new Dictionary<string, string>();
 
         // SAIN reflection cache
         private static bool _sainReflectionInit = false;
@@ -591,6 +595,7 @@ namespace RAID_REVIEW
                             finally
                             {
                                 trackingPlayers = new Dictionary<string, TrackingPlayer>();
+                                _lastBotQuestState.Clear();
                                 sessionId = null;
                                 stopwatch.Reset();
                             }
@@ -630,6 +635,11 @@ namespace RAID_REVIEW
                     {
                         InitSainReflection();
                         RefreshSainBotCache();
+                    }
+                    // Init QuestingBots reflection once
+                    if (DANW_QUESTINGBOTS__DETECTED)
+                    {
+                        QuestingBots_Integration.InitReflection();
                     }
                     foreach (Player player in allPlayers)
                     {
@@ -792,8 +802,46 @@ namespace RAID_REVIEW
                                     catch { }
                                 }
 
+                                // Override idle/patrol decisions with active quest info from QuestingBots
+                                if (DANW_QUESTINGBOTS__DETECTED && player.IsAI)
+                                {
+                                    try
+                                    {
+                                        var qd = QuestingBots_Integration.GetBotQuestData(player, sessionId, captureTime);
+                                        if (qd != null && (qd.status == "Active" || qd.status == "Pending"))
+                                        {
+                                            var isIdleOrPatrol = string.IsNullOrEmpty(decision)
+                                                || decision == "SAIN:peaceful" || decision == "SAIN:simplePatrol"
+                                                || decision == "SAIN:standBy" || decision == "SAIN:Peace";
+                                            if (isIdleOrPatrol)
+                                                decision = "QB:" + qd.questName;
+                                        }
+                                    }
+                                    catch { }
+                                }
+
                                 var trackingPlayerData = new TrackingPlayerData(sessionId, player.ProfileId, captureTime, playerPosition.x, playerPosition.y, playerPosition.z, dir, currentHealth, currentHealthMaximum, decision);
                                 _ = Telemetry.Send("POSITION", JsonConvert.SerializeObject(trackingPlayerData));
+                            }
+
+                            // QuestingBots: send quest data when it changes
+                            if (DANW_QUESTINGBOTS__DETECTED && player.IsAI)
+                            {
+                                try
+                                {
+                                    var questData = QuestingBots_Integration.GetBotQuestData(player, sessionId, captureTime);
+                                    if (questData != null)
+                                    {
+                                        var stateKey = $"{questData.questName}|{questData.status}|{questData.actionType}";
+                                        _lastBotQuestState.TryGetValue(player.ProfileId, out var lastState);
+                                        if (stateKey != lastState)
+                                        {
+                                            _lastBotQuestState[player.ProfileId] = stateKey;
+                                            _ = Telemetry.Send("BOT_QUEST", JsonConvert.SerializeObject(questData));
+                                        }
+                                    }
+                                }
+                                catch { }
                             }
 
                         }

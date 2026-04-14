@@ -161,6 +161,15 @@ const api = {
         } catch (error) {
             return [];
         }
+    },
+
+    getRaidBotQuests : async function(raidId: string) : Promise<any[]> {
+        try {
+            const response = await fetch(hostname + `/api/raids/${raidId}/bot_quests`);
+            return await response.json();
+        } catch (error) {
+            return [];
+        }
     }
 }
 
