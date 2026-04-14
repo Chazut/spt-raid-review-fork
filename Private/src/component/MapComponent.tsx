@@ -301,6 +301,10 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     const [botQuestCollapsed, setBotQuestCollapsed] = useState(true)
     const botQuestLayerRef = useRef<L.LayerGroup | null>(null)
 
+    // Loot float animations
+    const [showLootFloats, setShowLootFloats] = useState(true)
+    const prevTimeEndLimitRef = useRef<number>(0)
+
     // Bot Inventory
     const [botInvCollapsed, setBotInvCollapsed] = useState(true)
     const [selectedBotProfileId, setSelectedBotProfileId] = useState<string>('')
@@ -782,7 +786,24 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                         behaviorCat = getBehaviorCategory(currentDecision)
                         behaviorLine = `<br/><span style="color:${behaviorCat.color}">${behaviorCat.label}</span>${currentDecision ? ': ' + formatDecisionLabel(currentDecision) : ''}`
                     }
-                    const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})${behaviorLine}`
+                    // Build loot summary for this player up to current time
+                    let lootLine = ''
+                    if (raidData?.looting) {
+                        const playerLoot = raidData.looting.filter(l => {
+                            const added = l.added === 'True' || l.added === 'true' || l.added === '1'
+                            return l.profileId === playerId && added && Number(l.time) <= timeEndLimit
+                        })
+                        if (playerLoot.length > 0) {
+                            const totalValue = playerLoot.reduce((sum, l) => sum + (l.price || 0) * Number(l.qty || 1), 0)
+                            const top3 = [...playerLoot].sort((a, b) => (b.price || 0) * Number(b.qty || 1) - (a.price || 0) * Number(a.qty || 1)).slice(0, 3)
+                            const itemList = top3.map(l => {
+                                const p = (l.price || 0) * Number(l.qty || 1)
+                                return `${l.itemName || l.name}${p > 0 ? ' \u20BD' + p.toLocaleString() : ''}`
+                            }).join(', ')
+                            lootLine = `<br/><span style="color:#FACC15">\u{1F4E6} ${playerLoot.length} items</span> (\u20BD${totalValue.toLocaleString()})<br/><span style="font-size:10px;opacity:0.7">${itemList}${playerLoot.length > 3 ? '...' : ''}</span>`
+                        }
+                    }
+                    const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})${behaviorLine}${lootLine}`
                     const ringColor = behaviorCat && behaviorCat.key !== 'idle' && behaviorCat.key !== 'patrol' ? behaviorCat.color : undefined
                     const marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, markerOpacity, pmcIndexMap[playerId], tip, ringColor)
                     marker._rr_playerId = playerId
@@ -1424,13 +1445,12 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 `${icon} <strong>${botName}</strong><br/>${q.questName}<br/><em>${q.actionType}</em> (${q.status})${isEFT ? '<br/><span style="color:#FFD700">EFT Quest</span>' : ''}`,
                 { direction: 'top', offset: [0, -8], className: 'player-tooltip player-tooltip-html' }
             )
+            marker._rr_quest = true
             group.addLayer(marker)
 
             // Draw a dashed line from bot's current position to the objective
             const posData = positions as any
             if (posData && typeof posData === 'object') {
-                // positions is { profileId: [ {x, z, time, ...}, ... ] } or similar
-                // Try to find bot's position closest to current time
                 const botPositions = posData[profileId]
                 if (Array.isArray(botPositions) && botPositions.length > 0) {
                     let closest = botPositions[0]
@@ -1444,6 +1464,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                             [[Number(closest.z), Number(closest.x)], [z, x]],
                             { color: isEFT ? '#FFD700' : '#00BFFF', weight: 1, dashArray: '4 4', opacity: 0.5 }
                         )
+                        line._rr_quest = true
                         group.addLayer(line)
                     }
                 }
@@ -1460,6 +1481,68 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             }
         }
     }, [MAP, mapIsReady, showBotQuests, botQuestData, timeEndLimit, raidData?.players, raidData?.kills, positions])
+
+    // Loot float animations: show floating text when timeline crosses a loot event
+    // Uses a ref-based approach to avoid useEffect cleanup killing the animation on re-render
+    const lootFloatTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+    // Track active float count per approximate position to stack them
+    const lootFloatStackRef = useRef<Record<string, number>>({})
+
+    useEffect(() => {
+        if (!MAP || !mapIsReady || !showLootFloats) {
+            prevTimeEndLimitRef.current = timeEndLimit
+            return
+        }
+
+        const prevTime = prevTimeEndLimitRef.current
+        prevTimeEndLimitRef.current = timeEndLimit
+
+        // Only show floats when timeline moves forward (not scrubbing backward)
+        if (timeEndLimit <= prevTime) return
+
+        if (!raidData?.looting) return
+
+        // Find loot events in the time window that just passed
+        const newLoots = raidData.looting.filter(l => {
+            const t = Number(l.time)
+            const added = l.added === 'True' || l.added === 'true' || l.added === '1'
+            return added && t > prevTime && t <= timeEndLimit && l.x && l.z
+        })
+
+        if (newLoots.length === 0) return
+
+        // Each loot event gets its own independent layer + timer
+        // Stagger vertically based on how many floats are already active at this position
+        for (let li = 0; li < newLoots.length; li++) {
+            const loot = newLoots[li]
+            const price = (loot.price || 0) * Number(loot.qty || 1)
+            const priceStr = price > 0 ? ` \u20BD${price.toLocaleString()}` : ''
+            const color = price >= 50000 ? '#FFD700' : price >= 10000 ? '#9a8866' : '#ccc'
+
+            // Round position to group nearby floats together
+            const posKey = `${Math.round(Number(loot.z))},${Math.round(Number(loot.x))}`
+            const stackIndex = lootFloatStackRef.current[posKey] || 0
+            lootFloatStackRef.current[posKey] = stackIndex + 1
+            const yOffset = stackIndex * 18
+
+            const icon = L.divIcon({
+                className: '',
+                html: `<div class="loot-float-label" style="color:${color}">+${loot.itemName || loot.name}${priceStr}</div>`,
+                iconSize: [200, 20],
+                iconAnchor: [100, 20 + yOffset],
+            })
+            const marker = L.marker([Number(loot.z), Number(loot.x)], { icon, interactive: false, zIndexOffset: 2000 + stackIndex })
+            marker.addTo(MAP)
+
+            // Self-cleaning timer — decrement stack count when animation ends
+            const timer = setTimeout(() => {
+                if (MAP) MAP.removeLayer(marker)
+                lootFloatTimersRef.current.delete(timer)
+                if (lootFloatStackRef.current[posKey] > 0) lootFloatStackRef.current[posKey]--
+            }, 5200)
+            lootFloatTimersRef.current.add(timer)
+        }
+    }, [MAP, mapIsReady, showLootFloats, timeEndLimit, raidData?.looting])
 
     // Compute filtered loot stats (timeline-aware)
     const looseLootStats = useMemo(() => {
@@ -1677,6 +1760,9 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         for (const key in m._layers) {
             const layer = m._layers[key];
         
+            // Skip layers managed by other overlays (quests, loose loot, etc.)
+            if (layer._rr_quest || layer._rr_looseLoot) continue;
+
             // Remove polylines without eventType or not being ballisticsLine, circles, and special bot markers
             const isSpecialBotMarker = layer instanceof L.Marker && layer.options?.icon?.options?.className === 'special-bot-marker';
             const isFollowKillMarker = layer instanceof L.Marker && layer.options?.icon?.options?.className?.includes('follow-kill-marker');
@@ -2108,6 +2194,15 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                             style={{ accentColor: '#9a8866' }}
                                         />
                                         <span>Show on map</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '6px' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={showLootFloats}
+                                            onChange={() => setShowLootFloats(!showLootFloats)}
+                                            style={{ accentColor: '#9a8866' }}
+                                        />
+                                        <span>Loot animations</span>
                                     </label>
 
                                     <div style={{ marginBottom: '6px' }}>

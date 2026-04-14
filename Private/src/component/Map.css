@@ -342,6 +342,21 @@ aside {
   background-image: url('/positional.png');
   background-size: contain;
 }
+/* Loot float animation */
+@keyframes lootFloat {
+  0%   { opacity: 1; transform: translateY(0); }
+  70%  { opacity: 1; transform: translateY(-20px); }
+  100% { opacity: 0; transform: translateY(-40px); }
+}
+.loot-float-label {
+  animation: lootFloat 5s ease-out forwards;
+  pointer-events: none;
+  white-space: nowrap;
+  font-size: 11px;
+  font-weight: bold;
+  text-shadow: 0 0 3px #000, 0 0 6px #000;
+}
+
 #view-switcher button.heatmap {
   height: 75px;
   width: 75px;
