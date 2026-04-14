@@ -301,7 +301,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     const [botQuestCollapsed, setBotQuestCollapsed] = useState(true)
     const botQuestLayerRef = useRef<L.LayerGroup | null>(null)
 
-    // Hit flash animations
+    // Animations section
+    const [animationsCollapsed, setAnimationsCollapsed] = useState(true)
     const [showHitFlash, setShowHitFlash] = useState(() => localStorage.getItem('rr_showHitFlash') !== 'false')
     const hitFlashTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
     const prevTimeHitRef = useRef<number>(0)
@@ -2346,6 +2347,40 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 </div>
                 <aside className="sidebar-right border border-eft ml-3 p-3 overflow-x-auto">
                     <div className="playerfeed text-eft">
+                        {/* ── Animations Section ── */}
+                        <div>
+                            <div
+                                className="flex items-center cursor-pointer"
+                                style={{ fontSize: '14px' }}
+                                onClick={() => setAnimationsCollapsed(!animationsCollapsed)}
+                            >
+                                <span style={{ marginRight: '4px', fontSize: '9px' }}>{animationsCollapsed ? '\u25B6' : '\u25BC'}</span>
+                                <strong>Animations</strong>
+                            </div>
+                            {!animationsCollapsed && (
+                                <div style={{ marginTop: '6px', fontSize: '13px' }}>
+                                    <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '6px' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={showLootFloats}
+                                            onChange={() => setShowLootFloats(!showLootFloats)}
+                                            style={{ accentColor: '#9a8866' }}
+                                        />
+                                        <span>Loot pickups</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '6px' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={showHitFlash}
+                                            onChange={() => setShowHitFlash(!showHitFlash)}
+                                            style={{ accentColor: '#9a8866' }}
+                                        />
+                                        <span>Hit impacts</span>
+                                    </label>
+                                </div>
+                            )}
+                        </div>
+
                         {/* ── Loose Loot Section ── */}
                         <div>
                             <div
@@ -2367,25 +2402,6 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                         />
                                         <span>Show on map</span>
                                     </label>
-                                    <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '6px' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={showLootFloats}
-                                            onChange={() => setShowLootFloats(!showLootFloats)}
-                                            style={{ accentColor: '#9a8866' }}
-                                        />
-                                        <span>Loot animations</span>
-                                    </label>
-                                    <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '6px' }}>
-                                        <input
-                                            type="checkbox"
-                                            checked={showHitFlash}
-                                            onChange={() => setShowHitFlash(!showHitFlash)}
-                                            style={{ accentColor: '#9a8866' }}
-                                        />
-                                        <span>Hit animations</span>
-                                    </label>
-
                                     <div style={{ marginBottom: '6px' }}>
                                         <div className="flex justify-between" style={{ fontSize: '12px', marginBottom: '2px' }}>
                                             <span>Min price</span>
@@ -2499,8 +2515,15 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                     const prev = latestByBot[q.profileId]
                                                     if (!prev || Number(q.time) > Number(prev.time)) latestByBot[q.profileId] = q
                                                 }
+                                                // Build dead bot set at current time
+                                                const deadOrGone = new Set<string>()
+                                                if (raidData?.kills) {
+                                                    for (const k of raidData.kills) {
+                                                        if (Number(k.time) <= timeEndLimit) deadOrGone.add(k.killedId)
+                                                    }
+                                                }
                                                 return Object.entries(latestByBot)
-                                                    .filter(([, q]) => q.status !== 'Completed' && q.status !== 'Archived' && q.status !== 'Failed')
+                                                    .filter(([profileId, q]) => q.status !== 'Completed' && q.status !== 'Archived' && q.status !== 'Failed' && !deadOrGone.has(profileId))
                                                     .map(([profileId, q]) => {
                                                         const player = raidData?.players?.find(p => p.profileId === profileId)
                                                         const botName = player?.name || profileId.slice(0, 8)
