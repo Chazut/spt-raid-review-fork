@@ -296,13 +296,13 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     const looseLootHighlightRef = useRef<L.CircleMarker | null>(null)
 
     // Bot Quests (QuestingBots integration)
-    const [showBotQuests, setShowBotQuests] = useState(true)
+    const [showBotQuests, setShowBotQuests] = useState(() => localStorage.getItem('rr_showBotQuests') !== 'false')
     const [botQuestData, setBotQuestData] = useState<any[]>([])
     const [botQuestCollapsed, setBotQuestCollapsed] = useState(true)
     const botQuestLayerRef = useRef<L.LayerGroup | null>(null)
 
     // Loot float animations
-    const [showLootFloats, setShowLootFloats] = useState(true)
+    const [showLootFloats, setShowLootFloats] = useState(() => localStorage.getItem('rr_showLootFloats') !== 'false')
     const prevTimeEndLimitRef = useRef<number>(0)
 
     // Bot Inventory
@@ -1306,13 +1306,19 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         })()
     }, [showLooseLoot, raidId])
 
-    // Loose Loot: persist settings to localStorage
+    // Persist settings to localStorage
     useEffect(() => {
         localStorage.setItem('rr_looseLoot_minPrice', String(looseLootMinPrice))
     }, [looseLootMinPrice])
     useEffect(() => {
         localStorage.setItem('rr_looseLoot_filter', looseLootFilter)
     }, [looseLootFilter])
+    useEffect(() => {
+        localStorage.setItem('rr_showLootFloats', String(showLootFloats))
+    }, [showLootFloats])
+    useEffect(() => {
+        localStorage.setItem('rr_showBotQuests', String(showBotQuests))
+    }, [showBotQuests])
 
     // Build set of picked-up item IDs before current timeline position
     const pickedUpItemIds = useMemo(() => {
@@ -1466,9 +1472,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         }
     }, [MAP, mapIsReady, showLooseLoot, looseLootData, looseLootMinPrice, looseLootFilter, pickedUpItemIds, raidData?.looting, timeEndLimit])
 
-    // Bot Quests: fetch data lazily when toggled on
+    // Bot Quests: always fetch data (panel visibility depends on data existing)
     useEffect(() => {
-        if (!showBotQuests) return
         if (botQuestData.length > 0) return
         ;(async () => {
             const data = await api.getRaidBotQuests(raidId)
@@ -1476,7 +1481,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 setBotQuestData(data)
             }
         })()
-    }, [showBotQuests, raidId])
+    }, [raidId])
 
     // Bot Quests: render objective markers on map (timeline-aware)
     useEffect(() => {
