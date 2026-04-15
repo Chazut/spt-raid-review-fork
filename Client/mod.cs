@@ -818,9 +818,11 @@ namespace RAID_REVIEW
                                             if (_seenLayerNames.Add(layerName))
                                                 Logger.LogInfo($"RAID_REVIEW :::: BRAIN_LAYER :::: {layerName}");
 
-                                            // BigBrain layer names like "Looting", "Loot Scan" from LootingBots
+                                            // BigBrain layer names from various mods
                                             if (layerName.Contains("Loot"))
                                                 decision = "LootingBots:" + layerName;
+                                            else if (layerName.Contains("Follower") || layerName.Contains("Regroup"))
+                                                decision = "BL:" + layerName;
                                         }
                                     }
                                     catch { }
