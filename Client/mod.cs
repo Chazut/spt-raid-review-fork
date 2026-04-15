@@ -773,7 +773,7 @@ namespace RAID_REVIEW
                                 // Health Data
                                 ValueStruct commonHealth = player.HealthController.GetBodyPartHealth(EBodyPart.Common, true);
                                 float currentHealth = commonHealth.Current;
-                                float currentHealthMaximum = commonHealth.Current;
+                                float currentHealthMaximum = commonHealth.Maximum;
 
                                 // Bot behavior state
                                 string decision = "";

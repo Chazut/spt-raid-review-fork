@@ -98,10 +98,15 @@ function getLootPriceColor(totalPrice: number): string {
     return '#64748B'                              // slate
 }
 
-function createPlayerMarker(latlng: any, color: string, player: any, proportionalScale: number, opacity: number = 1, pmcIndex?: number, tooltipText?: string, behaviorColor?: string | null): L.Layer {
+function createPlayerMarker(latlng: any, color: string, player: any, proportionalScale: number, opacity: number = 1, pmcIndex?: number, tooltipText?: string, behaviorColor?: string | null, hpPercent?: number): L.Layer {
     const displayName = tooltipText || getDisplayName(player)
     const tooltipOpts: L.TooltipOptions = { direction: 'top', offset: [0, -10], className: 'player-tooltip' }
     const ringStyle = behaviorColor ? `box-shadow: 0 0 0 3px ${behaviorColor}, 0 0 6px 1px ${behaviorColor}55;` : ''
+    // HP fill: gradient from bottom (color) to top (dark) based on HP percentage
+    const hp = hpPercent != null ? Math.max(0, Math.min(100, hpPercent)) : 100
+    const bgStyle = hp < 100
+        ? `background: linear-gradient(to top, ${color} ${hp}%, rgba(30,30,30,0.8) ${hp}%);`
+        : `background-color: ${color};`
     const label = getMarkerLabel(player)
     if (label === 'BTR_ICON') {
         const btrSvg = `<svg viewBox="0 0 24 18" width="24" height="18" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="3" width="20" height="8" rx="1" fill="${color}" opacity="${opacity}"/><rect x="5" y="1" width="10" height="4" rx="1" fill="${color}" opacity="${opacity}"/><line x1="15" y1="3" x2="20" y2="5" stroke="${color}" stroke-width="1.2" opacity="${opacity}"/><circle cx="5.5" cy="13.5" r="2.5" fill="${color}" opacity="${opacity}"/><circle cx="12" cy="13.5" r="2.5" fill="${color}" opacity="${opacity}"/><circle cx="18.5" cy="13.5" r="2.5" fill="${color}" opacity="${opacity}"/><circle cx="5.5" cy="13.5" r="1" fill="#1a1a1a"/><circle cx="12" cy="13.5" r="1" fill="#1a1a1a"/><circle cx="18.5" cy="13.5" r="1" fill="#1a1a1a"/></svg>`
@@ -116,7 +121,7 @@ function createPlayerMarker(latlng: any, color: string, player: any, proportiona
     if (label) {
         const icon = L.divIcon({
             className: 'special-bot-marker',
-            html: `<div class="bot-marker-dot" style="background-color: ${color}; opacity: ${opacity}; ${ringStyle}">${label}</div>`,
+            html: `<div class="bot-marker-dot" style="${bgStyle} opacity: ${opacity}; ${ringStyle}">${label}</div>`,
             iconSize: [18, 18],
             iconAnchor: [9, 9],
         })
@@ -126,24 +131,21 @@ function createPlayerMarker(latlng: any, color: string, player: any, proportiona
     if (pmcIndex !== undefined) {
         const icon = L.divIcon({
             className: 'special-bot-marker',
-            html: `<div class="bot-marker-dot bot-marker-round" style="background-color: ${color}; opacity: ${opacity}; ${ringStyle}">${pmcIndex}</div>`,
+            html: `<div class="bot-marker-dot bot-marker-round" style="${bgStyle} opacity: ${opacity}; ${ringStyle}">${pmcIndex}</div>`,
             iconSize: [18, 18],
             iconAnchor: [9, 9],
         })
         return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, { ...tooltipOpts, className: 'player-tooltip player-tooltip-html' })
     }
-    // Scavs: plain circle — use divIcon for behavior ring support
-    if (behaviorColor) {
-        const size = Math.max(10, proportionalScale * 2)
-        const icon = L.divIcon({
-            className: 'special-bot-marker',
-            html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};opacity:${opacity};${ringStyle}"></div>`,
-            iconSize: [size, size],
-            iconAnchor: [size / 2, size / 2],
-        })
-        return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, { ...tooltipOpts, className: 'player-tooltip player-tooltip-html' })
-    }
-    return L.circle(latlng, { radius: proportionalScale, color, fillOpacity: opacity, fillRule: 'nonzero', opacity }).bindTooltip(displayName, tooltipOpts)
+    // Scavs: plain circle — always use divIcon for HP fill + behavior ring support
+    const size = Math.max(10, proportionalScale * 2)
+    const icon = L.divIcon({
+        className: 'special-bot-marker',
+        html: `<div style="width:${size}px;height:${size}px;border-radius:50%;${bgStyle}opacity:${opacity};${ringStyle}"></div>`,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
+    })
+    return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, { ...tooltipOpts, className: 'player-tooltip player-tooltip-html' })
 }
 import '../modules/leaflet-heat.js'
 import './Map.css'
@@ -774,23 +776,33 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 pl._rr_normalOpacity = preserveHistory ? 0.8 : isPlayerDead ? 0 : 0.8
 
                 if (!isPlayerDead) {
-                    // Get latest behavior decision from position data (skip BTR)
+                    // Get latest behavior decision + health from position data (skip BTR)
                     const isBTR = player?.type?.includes('BTR')
                     let currentDecision: string | undefined
+                    let currentHealth: number | undefined
+                    let maxHealth: number | undefined
                     let behaviorCat = null
                     let behaviorLine = ''
-                    if (showBehavior && !isBTR) {
-                        const pp = positions[playerId]
-                        if (pp) {
-                            for (let di = pp.length - 1; di >= 0; di--) {
-                                if (pp[di].time <= timeEndLimit) {
-                                    currentDecision = pp[di].decision
-                                    break
-                                }
+                    let healthLine = ''
+                    const pp = positions[playerId]
+                    if (pp) {
+                        for (let di = pp.length - 1; di >= 0; di--) {
+                            if (pp[di].time <= timeEndLimit) {
+                                currentDecision = pp[di].decision
+                                currentHealth = pp[di].health
+                                maxHealth = pp[di].maxHealth
+                                break
                             }
                         }
+                    }
+                    if (showBehavior && !isBTR) {
                         behaviorCat = getBehaviorCategory(currentDecision)
                         behaviorLine = `<br/><span style="color:${behaviorCat.color}">${behaviorCat.label}</span>${currentDecision ? ': ' + formatDecisionLabel(currentDecision) : ''}`
+                    }
+                    if (currentHealth != null && maxHealth != null && maxHealth > 0) {
+                        const pct = Math.round((currentHealth / maxHealth) * 100)
+                        const hpColor = pct > 60 ? '#22C55E' : pct > 30 ? '#F59E0B' : '#EF4444'
+                        healthLine = `<br/><span style="color:${hpColor}">\u2764 ${Math.round(currentHealth)}/${Math.round(maxHealth)} (${pct}%)</span>`
                     }
                     // Build loot summary for this player up to current time
                     let lootLine = ''
@@ -809,9 +821,10 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                             lootLine = `<br/><span style="color:#FACC15">\u{1F4E6} ${playerLoot.length} items</span> (\u20BD${totalValue.toLocaleString()})<br/><span style="font-size:10px;opacity:0.7">${itemList}${playerLoot.length > 3 ? '...' : ''}</span>`
                         }
                     }
-                    const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})${behaviorLine}${lootLine}`
+                    const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})${healthLine}${behaviorLine}${lootLine}`
                     const ringColor = behaviorCat && behaviorCat.key !== 'idle' && behaviorCat.key !== 'patrol' ? behaviorCat.color : undefined
-                    const marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, markerOpacity, pmcIndexMap[playerId], tip, ringColor)
+                    const hpPct = (currentHealth != null && maxHealth != null && maxHealth > 0) ? Math.round((currentHealth / maxHealth) * 100) : undefined
+                    const marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, markerOpacity, pmcIndexMap[playerId], tip, ringColor, hpPct)
                     marker._rr_playerId = playerId
                     marker._rr_isDead = false
                     marker._rr_normalOpacity = 1
@@ -1649,7 +1662,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             const loot = newLoots[li]
             const price = (loot.price || 0) * Number(loot.qty || 1)
             const priceStr = price > 0 ? ` \u20BD${price.toLocaleString()}` : ''
-            const color = price >= 50000 ? '#FFD700' : price >= 10000 ? '#9a8866' : '#ccc'
+            const color = getLootPriceColor(price)
 
             // Round position to group nearby floats together
             const posKey = `${Math.round(Number(loot.z))},${Math.round(Number(loot.x))}`
