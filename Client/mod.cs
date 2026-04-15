@@ -152,6 +152,8 @@ namespace RAID_REVIEW
         public static Dictionary<string, TrackingPlayer> updatedBots = new Dictionary<string, TrackingPlayer>();
         // QuestingBots: cache last sent quest+status per bot to avoid spamming unchanged data
         public static Dictionary<string, string> _lastBotQuestState = new Dictionary<string, string>();
+        // Debug: log unique BigBrain layer names seen during the raid
+        private static HashSet<string> _seenLayerNames = new HashSet<string>();
 
         // SAIN reflection cache
         private static bool _sainReflectionInit = false;
@@ -596,6 +598,7 @@ namespace RAID_REVIEW
                             {
                                 trackingPlayers = new Dictionary<string, TrackingPlayer>();
                                 _lastBotQuestState.Clear();
+                                _seenLayerNames.Clear();
                                 sessionId = null;
                                 stopwatch.Reset();
                             }
@@ -797,6 +800,27 @@ namespace RAID_REVIEW
                                                 if (lastDecision.HasValue)
                                                     decision = lastDecision.Value.ToString();
                                             }
+                                        }
+                                    }
+                                    catch { }
+                                }
+
+                                // Override idle/patrol decisions with BigBrain layer name (LootingBots, etc.)
+                                if (player.IsAI && (string.IsNullOrEmpty(decision) || decision == "SAIN:peaceful" || decision == "SAIN:simplePatrol" || decision == "SAIN:standBy"))
+                                {
+                                    try
+                                    {
+                                        var botOwner = player.AIData?.BotOwner;
+                                        var layerName = botOwner?.Brain != null ? botOwner.Brain.ActiveLayerName() : null;
+                                        if (!string.IsNullOrEmpty(layerName))
+                                        {
+                                            // Log unique layer names for debugging
+                                            if (_seenLayerNames.Add(layerName))
+                                                Logger.LogInfo($"RAID_REVIEW :::: BRAIN_LAYER :::: {layerName}");
+
+                                            // BigBrain layer names like "Looting", "Loot Scan" from LootingBots
+                                            if (layerName.Contains("Loot"))
+                                                decision = "LootingBots:" + layerName;
                                         }
                                     }
                                     catch { }

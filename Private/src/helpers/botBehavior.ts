@@ -88,6 +88,7 @@ const DECISION_TO_CATEGORY: Record<string, string> = {
 export function getBehaviorCategory(decision: string | undefined | null): BehaviorCategory {
     if (!decision || decision === '') return BEHAVIOR_CATEGORIES.idle
     if (decision.startsWith('QB:')) return BEHAVIOR_CATEGORIES.quest
+    if (decision.startsWith('LootingBots:')) return BEHAVIOR_CATEGORIES.loot
     const cleanDecision = decision.startsWith('SAIN:') ? decision.substring(5) : decision
     const categoryKey = DECISION_TO_CATEGORY[cleanDecision] ?? 'other'
     return BEHAVIOR_CATEGORIES[categoryKey]
@@ -96,6 +97,7 @@ export function getBehaviorCategory(decision: string | undefined | null): Behavi
 export function formatDecisionLabel(decision: string | undefined | null): string {
     if (!decision || decision === '') return ''
     if (decision.startsWith('QB:')) return decision.substring(3)
+    if (decision.startsWith('LootingBots:')) return decision.substring(12)
     const clean = decision.startsWith('SAIN:') ? decision.substring(5) : decision
     // Convert camelCase to readable: "shootFromPlace" -> "Shoot From Place"
     return clean.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim()
