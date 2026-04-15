@@ -49,6 +49,14 @@ export function getMarkerLabel(player: any): string | null {
     if (type.includes('BTR')) return 'BTR_ICON'
     if (type.includes('SNIPER')) return 'Sn'
 
+    // Custom mod bots (FACTION_MOD): generate initials from the WildSpawnType
+    // e.g. BOSSLEGION|FACTION_MOD → "Le", LEGIONNAIRE|FACTION_MOD → "Le"
+    if (type.includes('FACTION_MOD')) {
+        const rawName = type.split('|')[0].replace('BOSS', '').replace('FOLLOWER', '')
+        if (rawName.length >= 2) return rawName.substring(0, 2).charAt(0).toUpperCase() + rawName.substring(1, 2).toLowerCase()
+        if (rawName.length === 1) return rawName.toUpperCase()
+    }
+
     return null
 }
 
@@ -58,6 +66,13 @@ export function getPlayerColor(player: any, index: number): string {
     let botMapping = (BotMapping as any)[player.type]
     if (player.name === 'Knight') {
         botMapping = { type: 'GOON' }
+    }
+    if (!botMapping && typeof player.type === 'string' && player.type.includes('|')) {
+        const category = player.type.split('|')[1]
+        const name = player.type.split('|')[0].toLowerCase()
+        if (category === 'FACTION_MOD') {
+            botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' }
+        }
     }
     if (!botMapping) {
         botMapping = { type: 'UNKNOWN' }
@@ -109,6 +124,13 @@ export function getPlayerFaction(player: any): string {
 
     let botMapping = (BotMapping as any)[player.type]
     if (player.name === 'Knight') botMapping = { type: 'GOON' }
+    if (!botMapping && typeof player.type === 'string' && player.type.includes('|')) {
+        const category = player.type.split('|')[1]
+        const name = player.type.split('|')[0].toLowerCase()
+        if (category === 'FACTION_MOD') {
+            botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' }
+        }
+    }
     if (!botMapping) return 'Unknown'
 
     switch (botMapping.type) {

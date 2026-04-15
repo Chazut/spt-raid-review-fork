@@ -37,6 +37,15 @@ function classifyPlayer(player: any): string {
 
     let botMapping = BotMapping[player.type]
     if (player.name === 'Knight') botMapping = { type: 'GOON' }
+    // Handle unknown mod bots (FACTION_MOD) by inferring from the type string
+    if (!botMapping && typeof player.type === 'string' && player.type.includes('|')) {
+        const category = player.type.split('|')[1]
+        const name = player.type.split('|')[0].toLowerCase()
+        if (category === 'FACTION_MOD') {
+            if (name.startsWith('boss')) botMapping = { type: 'BOSS' }
+            else botMapping = { type: 'FOLLOWER' }
+        }
+    }
     if (!botMapping) botMapping = { type: 'UNKNOWN' }
 
     switch (botMapping.type) {
@@ -2006,14 +2015,17 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             let brainOutput = 'Unknown'
             let botMapping = BotMapping[player.type]
             if (player.name === 'Knight') {
-                botMapping = {
-                    type: 'GOON',
+                botMapping = { type: 'GOON' }
+            }
+            if (!botMapping && typeof player.type === 'string' && player.type.includes('|')) {
+                const category = player.type.split('|')[1]
+                const name = player.type.split('|')[0].toLowerCase()
+                if (category === 'FACTION_MOD') {
+                    botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' }
                 }
             }
             if (!botMapping) {
-                botMapping = {
-                    type: 'UNKNOWN',
-                }
+                botMapping = { type: 'UNKNOWN' }
             }
 
             if ((player.team === 'Bear' || player.team === 'Usec') && player.mod_SAIN_brain != 'UNKNOWN') {
