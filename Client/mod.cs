@@ -532,8 +532,8 @@ namespace RAID_REVIEW
             BallisticsTracking = Config.Bind<bool>("Tracking Settings", "Ballistics Tracking", true, "Enables location tracking of ballistics.");
 
             // HTTP/Websocket Endpoint Builders
-            RAID_REVIEW_WS_Server = (ServerTLS.Value ? "wss://" : "ws://") + ServerAddress.Value +":" + ServerWsPort.Value;
-            RAID_REVIEW_HTTP_Server = (ServerTLS.Value ? "https://" : "http://") + ServerAddress.Value + ":" + ServerHttpPort.Value;
+            RAID_REVIEW_WS_Server = (ServerTLS.Value ? "wss://" : "ws://") + ServerAddress.Value + (ServerWsPort.Value != "" ? ":" + ServerWsPort.Value : "");
+            RAID_REVIEW_HTTP_Server = (ServerTLS.Value ? "https://" : "http://") + ServerAddress.Value + (ServerHttpPort.Value != "" ? ":" + ServerHttpPort.Value : "");
             Logger.LogInfo($"RAID_REVIEW :::: INFO :::: Configured WS Server: {RAID_REVIEW_WS_Server}");
             Logger.LogInfo($"RAID_REVIEW :::: INFO :::: Configured HTTP Server: {RAID_REVIEW_HTTP_Server}");
 
