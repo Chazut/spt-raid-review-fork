@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using RaidReview.Database;
 using RaidReview.FileSystem;
+using RaidReview.PostRaid;
 using RaidReview.Session;
 
 namespace RaidReview.WebSocket;
@@ -17,15 +18,17 @@ public class WsPacketHandler
     private readonly SessionManager _sessionManager;
     private readonly DataFileService _fileService;
     private readonly RaidReviewLogger _logger;
+    private readonly ItemResolver _itemResolver;
     private Action<string>? _startPostProcessing;
     private Action? _stopPostProcessing;
 
-    public WsPacketHandler(DatabaseService db, SessionManager sessionManager, DataFileService fileService, RaidReviewLogger logger)
+    public WsPacketHandler(DatabaseService db, SessionManager sessionManager, DataFileService fileService, RaidReviewLogger logger, ItemResolver itemResolver)
     {
         _db = db;
         _sessionManager = sessionManager;
         _fileService = fileService;
         _logger = logger;
+        _itemResolver = itemResolver;
     }
 
     public void SetPostProcessingCallbacks(Action<string> start, Action stop)
@@ -258,10 +261,10 @@ public class WsPacketHandler
                         ("$time", GetString(payload, "time")),
                         ("$qty", GetString(payload, "qty")),
                         ("$itemId", GetString(payload, "itemId")),
-                        ("$itemName", GetString(payload, "itemName")),
+                        ("$itemName", ResolveItemName(payload)),
                         ("$added", GetString(payload, "added")),
                         ("$templateId", GetString(payload, "templateId")),
-                        ("$price", GetString(payload, "price")),
+                        ("$price", ResolvePrice(payload)),
                         ("$x", GetString(payload, "x")),
                         ("$y", GetString(payload, "y")),
                         ("$z", GetString(payload, "z")));
@@ -281,8 +284,8 @@ public class WsPacketHandler
                                 ("$raidId", raidId!),
                                 ("$itemId", GetString(item, "itemId")),
                                 ("$templateId", GetString(item, "templateId")),
-                                ("$itemName", GetString(item, "itemName")),
-                                ("$price", GetString(item, "price")),
+                                ("$itemName", ResolveItemName(item)),
+                                ("$price", ResolvePrice(item)),
                                 ("$qty", GetString(item, "qty")),
                                 ("$x", GetString(item, "x")),
                                 ("$y", GetString(item, "y")),
@@ -308,8 +311,8 @@ public class WsPacketHandler
                                 ("$raidId", raidId!),
                                 ("$profileId", profileId2),
                                 ("$templateId", GetString(item, "templateId")),
-                                ("$itemName", GetString(item, "itemName")),
-                                ("$price", GetString(item, "price")),
+                                ("$itemName", ResolveItemName(item)),
+                                ("$price", ResolvePrice(item)),
                                 ("$qty", GetString(item, "qty")),
                                 ("$slot", GetString(item, "slot")));
                         }
@@ -371,6 +374,31 @@ public class WsPacketHandler
         if (el.TryGetProperty(key, out var v))
             return v.ValueKind == JsonValueKind.Null ? "" : v.ToString();
         return "";
+    }
+
+    /// <summary>
+    /// Returns the itemName from the payload, or generates the locale key from
+    /// the templateId as a fallback (Fika headless can't resolve names locally).
+    /// </summary>
+    private string ResolveItemName(JsonElement el)
+    {
+        var name = GetString(el, "itemName");
+        if (!string.IsNullOrEmpty(name)) return name;
+        var templateId = GetString(el, "templateId");
+        return ItemResolver.ResolveNameKey(templateId);
+    }
+
+    /// <summary>
+    /// Returns the price from the payload, or looks it up from the handbook
+    /// using the templateId as a fallback.
+    /// </summary>
+    private string ResolvePrice(JsonElement el)
+    {
+        var price = GetString(el, "price");
+        if (!string.IsNullOrEmpty(price) && price != "0") return price;
+        var templateId = GetString(el, "templateId");
+        var resolved = _itemResolver.ResolvePrice(templateId);
+        return resolved > 0 ? resolved.ToString() : price;
     }
 
     // Extracts a CSV header line from the position payload

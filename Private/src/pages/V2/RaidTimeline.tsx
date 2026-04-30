@@ -124,7 +124,7 @@ export default function RaidTimeline() {
                       <span className="inline-flex items-center">{playerIcon(killed)}<strong>{killed ? intl(killed.name, intl_dir) : "Unknown"}</strong></span>
                       <span className="opacity-75"> with a </span>
                         {/* @ts-ignore */}
-                      <strong>{ intl([tli.weapon.replace("Name", "ShortName")], intl_dir) } [{bodypart[tli.bodyPart]? bodypart[tli.bodyPart]: tli.bodyPart}] [{ Number(tli.distance).toFixed(2) }m]</strong>
+                      <strong>{ intl([(tli.weapon || '').replace("Name", "ShortName")], intl_dir) } [{bodypart[tli.bodyPart]? bodypart[tli.bodyPart]: tli.bodyPart}] [{ Number(tli.distance).toFixed(2) }m]</strong>
                     </td>
                   </>
                 ) : (
@@ -140,7 +140,7 @@ export default function RaidTimeline() {
                     <td className="text-left pl-2">
                       <strong>
                         {/* @ts-ignore */}
-                        {tli.qty}x { intl([tli.itemName.replace("Short", "")], intl_dir) }
+                        {tli.qty}x { intl([(tli.itemName || '').replace("Short", "")], intl_dir) }
                       </strong>
                     </td>
                   </>

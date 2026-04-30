@@ -7,7 +7,7 @@
 		<AssemblyDescription>A post raid review tool for SPT</AssemblyDescription>
 		<AssemblyCompany>EkkyLLC</AssemblyCompany>
 		<AssemblyProduct>RAID_REVIEW</AssemblyProduct>
-		<AssemblyVersion>1.0.3</AssemblyVersion>
+		<AssemblyVersion>1.1.0</AssemblyVersion>
 		<Copyright>2024 © Ekky</Copyright>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 		<OutputPath>C:\Games\SPT-4.0\BepInEx\plugins\</OutputPath>
@@ -16,6 +16,17 @@
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
 		<Optimize>False</Optimize>
 	</PropertyGroup>
+
+	<!-- Also deploy to the hardcore SPT install if present -->
+	<Target Name="DeployToHardcore" AfterTargets="Build">
+		<PropertyGroup>
+			<HardcorePluginsDir>C:\Games\SPT-4.0-hardcore\BepInEx\plugins</HardcorePluginsDir>
+		</PropertyGroup>
+		<Copy SourceFiles="$(OutputPath)$(AssemblyName).dll"
+		      DestinationFolder="$(HardcorePluginsDir)"
+		      SkipUnchangedFiles="true"
+		      Condition="Exists('$(HardcorePluginsDir)')" />
+	</Target>
 
 	<ItemGroup>
 		<Reference Include="0Harmony">

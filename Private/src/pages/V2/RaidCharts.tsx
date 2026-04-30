@@ -384,7 +384,7 @@ export default function RaidCharts() {
                             victimPlayer: playerObjMap[k.killedId] || null,
                             victimColor: playerColorMap[k.killedId] || '#999',
                             victimPmcIdx: pmcIndexMap[k.killedId],
-                            weapon: intl(k.weapon.replace("Name", "ShortName"), intl_dir),
+                            weapon: intl((k.weapon || '').replace("Name", "ShortName"), intl_dir),
                             distance: Number(k.distance).toFixed(1)
                         }))
                     })
