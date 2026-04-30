@@ -12,9 +12,9 @@ export const BEHAVIOR_CATEGORIES: Record<string, BehaviorCategory> = {
     medical:  { key: 'medical',  label: 'Medical',  color: '#EC4899' },
     loot:     { key: 'loot',     label: 'Loot',     color: '#FACC15' },
     flee:     { key: 'flee',     label: 'Flee',     color: '#A855F7' },
-    extract:  { key: 'extract',  label: 'Extract',  color: '#06B6D4' },
+    extract:  { key: 'extract',  label: 'Extract',  color: '#2DD4BF' },
     grenade:  { key: 'grenade',  label: 'Grenade',  color: '#FF6B6B' },
-    quest:    { key: 'quest',    label: 'Quest',    color: '#00BFFF' },
+    quest:    { key: 'quest',    label: 'Quest',    color: '#FBCFE8' },
     idle:     { key: 'idle',     label: 'Idle',     color: '#374151' },
     other:    { key: 'other',    label: 'Other',    color: '#6B7280' },
 }

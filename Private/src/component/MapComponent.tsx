@@ -1588,15 +1588,15 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
 
             const marker = L.circleMarker([z, x], {
                 radius: 6,
-                color: isEFT ? '#FFD700' : '#00BFFF',
+                color: isEFT ? '#FBCFE8' : '#D946EF',
                 weight: 2,
-                fillColor: isEFT ? 'rgba(255,215,0,0.3)' : 'rgba(0,191,255,0.3)',
+                fillColor: isEFT ? 'rgba(251,207,232,0.3)' : 'rgba(217,70,239,0.3)',
                 fillOpacity: 0.7,
                 interactive: true,
             })
 
             marker.bindTooltip(
-                `${icon} <strong>${botName}</strong><br/>${q.questName}<br/><em>${q.actionType}</em> (${q.status})${isEFT ? '<br/><span style="color:#FFD700">EFT Quest</span>' : ''}`,
+                `${icon} <strong>${botName}</strong><br/>${q.questName}<br/><em>${q.actionType}</em> (${q.status})${isEFT ? '<br/><span style="color:#FBCFE8">EFT Quest</span>' : ''}`,
                 { direction: 'top', offset: [0, -8], className: 'player-tooltip player-tooltip-html' }
             )
             marker._rr_quest = true
@@ -1616,7 +1616,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                     if (closest) {
                         const line = L.polyline(
                             [[Number(closest.z), Number(closest.x)], [z, x]],
-                            { color: isEFT ? '#FFD700' : '#00BFFF', weight: 1, dashArray: '4 4', opacity: 0.5 }
+                            { color: isEFT ? '#FBCFE8' : '#D946EF', weight: 1, dashArray: '4 4', opacity: 0.5 }
                         )
                         line._rr_quest = true
                         group.addLayer(line)
@@ -2528,8 +2528,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                             {botQuestData.length} quest events recorded
                                         </div>
                                         <div style={{ fontSize: '11px', marginBottom: '4px' }}>
-                                            <span style={{ color: '#FFD700', marginRight: '8px' }}>{'\u25CF'} EFT Quest</span>
-                                            <span style={{ color: '#00BFFF' }}>{'\u25CF'} QB Quest</span>
+                                            <span style={{ color: '#FBCFE8', marginRight: '8px' }}>{'\u25CF'} EFT Quest</span>
+                                            <span style={{ color: '#D946EF' }}>{'\u25CF'} QB Quest</span>
                                         </div>
                                         <div style={{ maxHeight: '250px', overflowY: 'auto', borderTop: '1px solid rgba(154,136,102,0.2)', paddingTop: '4px' }}>
                                             {(() => {
@@ -2557,7 +2557,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                             <div key={profileId} style={{ padding: '2px 0', borderBottom: '1px solid rgba(154,136,102,0.1)' }}>
                                                                 <div style={{ fontSize: '12px' }}>
                                                                     <strong>{botName}</strong>
-                                                                    <span style={{ color: isEFT ? '#FFD700' : '#00BFFF', marginLeft: '4px', fontSize: '10px' }}>
+                                                                    <span style={{ color: isEFT ? '#FBCFE8' : '#D946EF', marginLeft: '4px', fontSize: '10px' }}>
                                                                         {isEFT ? 'EFT' : 'QB'}
                                                                     </span>
                                                                 </div>

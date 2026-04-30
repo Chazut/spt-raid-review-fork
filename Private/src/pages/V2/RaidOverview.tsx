@@ -293,14 +293,17 @@ export default function RaidOverview() {
           // @ts-ignore
           let botMapping = BotMapping[player.type];
           if (player.name === "Knight") {
-            botMapping = {
-              type: 'GOON'
-            };
+            botMapping = { type: 'GOON' };
+          }
+          if (!botMapping && typeof player.type === 'string' && player.type.includes('|')) {
+            const category = player.type.split('|')[1];
+            const name = player.type.split('|')[0].toLowerCase();
+            if (category === 'FACTION_MOD') {
+              botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' };
+            }
           }
           if (!botMapping) {
-              botMapping = {
-                  type: 'UNKNOWN'
-              };
+              botMapping = { type: 'UNKNOWN' };
           }
 
           switch (botMapping.type){
