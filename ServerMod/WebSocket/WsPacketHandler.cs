@@ -377,15 +377,15 @@ public class WsPacketHandler
     }
 
     /// <summary>
-    /// Returns the itemName from the payload, or generates the locale key from
-    /// the templateId as a fallback (Fika headless can't resolve names locally).
+    /// Returns the itemName from the payload, or looks it up from the SPT locale
+    /// using the templateId as a fallback (Fika headless can't resolve names locally).
     /// </summary>
     private string ResolveItemName(JsonElement el)
     {
         var name = GetString(el, "itemName");
         if (!string.IsNullOrEmpty(name)) return name;
         var templateId = GetString(el, "templateId");
-        return ItemResolver.ResolveNameKey(templateId);
+        return _itemResolver.ResolveShortName(templateId);
     }
 
     /// <summary>
