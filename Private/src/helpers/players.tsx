@@ -72,6 +72,8 @@ export function getPlayerColor(player: any, index: number): string {
         const name = player.type.split('|')[0].toLowerCase()
         if (category === 'FACTION_MOD') {
             botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' }
+        } else {
+            botMapping = { type: category }
         }
     }
     if (!botMapping) {
@@ -115,6 +117,26 @@ export function getLegendIcon(player: any, color: string, pmcIdx?: number): JSX.
     return <span style={{ width: '10px', height: '10px', minWidth: '10px', minHeight: '10px', borderRadius: '50%', marginRight: '6px', background: color, border: '1px solid rgba(255,255,255,0.4)', flexShrink: 0, display: 'inline-block' }}></span>
 }
 
+/**
+ * Extracts the specific role of a faction-mod bot from its type name.
+ * e.g. "REMNANT RIFLEMAN|RUAF" → "Rifleman", "UNTAR SQUAD LEADER|UNTAR" → "Squad Leader"
+ * Returns '' if the bot has no recognizable faction role.
+ */
+export function getFactionRole(player: any): string {
+    const typeName = ((player?.type || '') as string).split('|')[0]
+    if (!typeName) return ''
+    // Strip the known faction prefix (longest first so "BLACK DIV" matches before "BLACK")
+    const prefixes = ['BLACK DIV', 'RUAF', 'REMNANT', 'UNTAR', 'MERCENARY']
+    let role = typeName
+    for (const p of prefixes) {
+        if (typeName === p) { role = typeName; break }
+        if (typeName.startsWith(p + ' ')) { role = typeName.slice(p.length + 1); break }
+    }
+    // Title case
+    return role.toLowerCase().split(' ').filter(Boolean)
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+}
+
 export function getPlayerFaction(player: any): string {
     if (player === undefined) return 'Unknown'
 
@@ -129,6 +151,8 @@ export function getPlayerFaction(player: any): string {
         const name = player.type.split('|')[0].toLowerCase()
         if (category === 'FACTION_MOD') {
             botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' }
+        } else {
+            botMapping = { type: category }
         }
     }
     if (!botMapping) return 'Unknown'

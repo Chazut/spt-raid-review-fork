@@ -10,6 +10,7 @@ import BotMapping from '../../assets/botMapping.json'
 import { useEffect, useState } from "react";
 import _ from "lodash";
 import { LOCATIONS } from "../../helpers/locations";
+import { getFactionRole } from "../../helpers/players";
 import cyr_to_en from '../../assets/cyr_to_en.json';
 
 const BOSS_NAME_OVERRIDES: Record<string, string> = {
@@ -300,6 +301,8 @@ export default function RaidOverview() {
             const name = player.type.split('|')[0].toLowerCase();
             if (category === 'FACTION_MOD') {
               botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' };
+            } else {
+              botMapping = { type: category };
             }
           }
           if (!botMapping) {
@@ -353,6 +356,13 @@ export default function RaidOverview() {
         if (player) {
           let difficulty = player.mod_SAIN_difficulty;
           let brain = getPlayerBrain(player);
+
+          // Faction-mod bots: show only their specific role (Rifleman, Grenadier, etc.)
+          const category = typeof player.type === "string" && player.type.includes("|") ? player.type.split("|")[1] : "";
+          if (["RUAF", "UNTAR", "BLACKDIV", "MERCENARY"].includes(category)) {
+            const role = getFactionRole(player);
+            if (role) return role;
+          }
 
           if (difficulty !== null && difficulty !== "") {
             if(player.team === "Savage" && brain === "") {

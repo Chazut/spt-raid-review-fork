@@ -365,6 +365,26 @@ namespace RAID_REVIEW
                             RR_WildSpawnType = "RUAF MACHINEGUNNER|RUAF";
                             break;
 
+                        // RUAF Hardcore - Remnant faction
+                        case "remnantRifleman":
+                            RR_WildSpawnType = "REMNANT RIFLEMAN|RUAF";
+                            break;
+                        case "remnantRiflemanSenior":
+                            RR_WildSpawnType = "REMNANT SENIOR RIFLEMAN|RUAF";
+                            break;
+                        case "remnantAutorifleman":
+                            RR_WildSpawnType = "REMNANT AUTORIFLEMAN|RUAF";
+                            break;
+                        case "remnantGrenadier":
+                            RR_WildSpawnType = "REMNANT GRENADIER|RUAF";
+                            break;
+                        case "remnantMarksman":
+                            RR_WildSpawnType = "REMNANT MARKSMAN|RUAF";
+                            break;
+                        case "remnantMachinegunner":
+                            RR_WildSpawnType = "REMNANT MACHINEGUNNER|RUAF";
+                            break;
+
                         // UNTAR Go Home
                         case "followeruntar":
                             RR_WildSpawnType = "UNTAR GUARD|UNTAR";

@@ -131,6 +131,13 @@ namespace RAID_REVIEW
                 case "ruafGrenadier": return "RUAF GRENADIER|RUAF";
                 case "ruafMarksman": return "RUAF MARKSMAN|RUAF";
                 case "ruafMachinegunner": return "RUAF MACHINEGUNNER|RUAF";
+                // RUAF Hardcore - Remnant faction
+                case "remnantRifleman": return "REMNANT RIFLEMAN|RUAF";
+                case "remnantRiflemanSenior": return "REMNANT SENIOR RIFLEMAN|RUAF";
+                case "remnantAutorifleman": return "REMNANT AUTORIFLEMAN|RUAF";
+                case "remnantGrenadier": return "REMNANT GRENADIER|RUAF";
+                case "remnantMarksman": return "REMNANT MARKSMAN|RUAF";
+                case "remnantMachinegunner": return "REMNANT MACHINEGUNNER|RUAF";
                 case "followeruntar": return "UNTAR GUARD|UNTAR";
                 case "bossuntarlead": return "UNTAR SQUAD LEADER|UNTAR";
                 case "followeruntarmarksman": return "UNTAR MARKSMAN|UNTAR";
