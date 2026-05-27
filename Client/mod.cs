@@ -23,8 +23,11 @@ using EFT.Interactive;
 
 namespace RAID_REVIEW
 {
-    [BepInPlugin("ekky.raidreview", "Raid Review", "1.0.2")]
+    [BepInPlugin("ekky.raidreview", "Raid Review", "1.1.0")]
     [BepInDependency("me.sol.sain", BepInDependency.DependencyFlags.SoftDependency)]
+    [BepInDependency("com.danw.questingbots", BepInDependency.DependencyFlags.SoftDependency)]
+    [BepInDependency("com.janky.phobos", BepInDependency.DependencyFlags.SoftDependency)]
+    [BepInDependency("com.chazut.orbit", BepInDependency.DependencyFlags.SoftDependency)]
     public class RAID_REVIEW : BaseUnityPlugin
     {
         // Framerate
@@ -60,6 +63,14 @@ namespace RAID_REVIEW
         public static ConfigEntry<string> ServerHttpPort;
         public static ConfigEntry<bool> EnableRecording;
         public static ConfigEntry<bool> ServerTLS;
+
+        // Opt-out toggles for unsupported legacy mod integrations. Default ON
+        // so users with these mods still get telemetry, but they're behind a
+        // disclaimer-bearing toggle so users without them (or who see errors)
+        // can disable cleanly. Both use reflection against mods that don't
+        // expose a public API — no support guarantees.
+        public static ConfigEntry<bool> EnableLegacyPhobos;
+        public static ConfigEntry<bool> EnableLegacyQuestingBots;
         public static GameObject Hook;
 
         /// <summary>
@@ -130,6 +141,13 @@ namespace RAID_REVIEW
                 case "ruafGrenadier": return "RUAF GRENADIER|RUAF";
                 case "ruafMarksman": return "RUAF MARKSMAN|RUAF";
                 case "ruafMachinegunner": return "RUAF MACHINEGUNNER|RUAF";
+                // RUAF Hardcore - Remnant faction
+                case "remnantRifleman": return "REMNANT RIFLEMAN|RUAF";
+                case "remnantRiflemanSenior": return "REMNANT SENIOR RIFLEMAN|RUAF";
+                case "remnantAutorifleman": return "REMNANT AUTORIFLEMAN|RUAF";
+                case "remnantGrenadier": return "REMNANT GRENADIER|RUAF";
+                case "remnantMarksman": return "REMNANT MARKSMAN|RUAF";
+                case "remnantMachinegunner": return "REMNANT MACHINEGUNNER|RUAF";
                 case "followeruntar": return "UNTAR GUARD|UNTAR";
                 case "bossuntarlead": return "UNTAR SQUAD LEADER|UNTAR";
                 case "followeruntarmarksman": return "UNTAR MARKSMAN|UNTAR";
@@ -145,9 +163,22 @@ namespace RAID_REVIEW
         // Other Mods
         public static bool MODS_SEARCHED = false;
         public static bool SOLARINT_SAIN__DETECTED { get; set; }
+        public static bool DANW_QUESTINGBOTS__DETECTED { get; set; }
+        // Upstream Phobos (com.janky.phobos) — legacy integration in
+        // Phobos_Integration. Gated by EnableLegacyPhobos (default OFF).
+        public static bool PHOBOS_LEGACY__DETECTED { get; set; }
+        // ORBIT (com.chazut.orbit) — the supported AI integration.
+        // Reflection target is the Orbit assembly, types Orbit.Core.*.
+        public static bool ORBIT__DETECTED { get; set; }
         public static object sainBotController { get; set; }
         public static bool searchingForSainComponents = false;
         public static Dictionary<string, TrackingPlayer> updatedBots = new Dictionary<string, TrackingPlayer>();
+        // QuestingBots: cache last sent quest+status per bot to avoid spamming unchanged data
+        public static Dictionary<string, string> _lastBotQuestState = new Dictionary<string, string>();
+        // Phobos: cache last sent objective state per bot to avoid spamming unchanged data
+        public static Dictionary<string, string> _lastBotObjectiveState = new Dictionary<string, string>();
+        // Debug: log unique BigBrain layer names seen during the raid
+        private static HashSet<string> _seenLayerNames = new HashSet<string>();
 
         // SAIN reflection cache
         private static bool _sainReflectionInit = false;
@@ -407,6 +438,80 @@ namespace RAID_REVIEW
         private static bool _looseLootCaptured = false;
         public static void ResetLooseLootFlag() { _looseLootCaptured = false; }
 
+        // ── Legacy Phobos Advection Field Capture (periodic — convergence field tracks players) ──
+        // Opt-in only — gated by both PHOBOS_LEGACY__DETECTED and the user toggle.
+        private static long _phobosFieldLastCapture = -999999;
+        private const long PhobosFieldIntervalMs = 30000;
+        public static void ResetPhobosFieldFlag() { _phobosFieldLastCapture = -999999; }
+
+        private void CaptureLegacyPhobosField()
+        {
+            if (!PHOBOS_LEGACY__DETECTED) return;
+            var now = stopwatch.ElapsedMilliseconds;
+            if (now - _phobosFieldLastCapture < PhobosFieldIntervalMs) return;
+            try
+            {
+                var field = Phobos_Integration.GetAdvectionFieldSnapshot(sessionId, now);
+                if (field == null) return; // LocationSystem may not be ready yet — retry next tick
+                _phobosFieldLastCapture = now;
+                _ = Telemetry.Send("PHOBOS_FIELD", JsonConvert.SerializeObject(field));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"RAID_REVIEW :::: WARN :::: Phobos field capture failed: {ex.Message}");
+            }
+        }
+
+        // ── ORBIT Main Objectives Capture (periodic ~30s) ──
+        // Per-squad list of main objectives + completion flags. Mostly static
+        // (the list is frozen at squad creation) but Completed flags and
+        // KillsRoamStartedAt mutate over the raid — periodic ticks let the
+        // viz reflect progression.
+        private static long _orbitMainObjLastCapture = -999999;
+        private const long OrbitMainObjIntervalMs = 30000;
+        public static void ResetOrbitMainObjFlag() { _orbitMainObjLastCapture = -999999; }
+
+        private void CaptureOrbitMainObjectives()
+        {
+            if (!ORBIT__DETECTED) return;
+            var now = stopwatch.ElapsedMilliseconds;
+            if (now - _orbitMainObjLastCapture < OrbitMainObjIntervalMs) return;
+            try
+            {
+                var snapshot = Orbit_Integration.GetMainObjectivesSnapshot(sessionId, now);
+                if (snapshot == null) return;
+                _orbitMainObjLastCapture = now;
+                _ = Telemetry.Send("ORBIT_MAIN_OBJECTIVES", JsonConvert.SerializeObject(snapshot));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"RAID_REVIEW :::: WARN :::: ORBIT main-objectives capture failed: {ex.Message}");
+            }
+        }
+
+        // ── ORBIT Advection Field Capture (periodic ~30s) ──
+        private static long _orbitFieldLastCapture = -999999;
+        private const long OrbitFieldIntervalMs = 30000;
+        public static void ResetOrbitFieldFlag() { _orbitFieldLastCapture = -999999; }
+
+        private void CaptureOrbitField()
+        {
+            if (!ORBIT__DETECTED) return;
+            var now = stopwatch.ElapsedMilliseconds;
+            if (now - _orbitFieldLastCapture < OrbitFieldIntervalMs) return;
+            try
+            {
+                var field = Orbit_Integration.GetAdvectionFieldSnapshot(sessionId, now);
+                if (field == null) return;
+                _orbitFieldLastCapture = now;
+                _ = Telemetry.Send("ORBIT_FIELD", JsonConvert.SerializeObject(field));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"RAID_REVIEW :::: WARN :::: ORBIT field capture failed: {ex.Message}");
+            }
+        }
+
         private void CaptureLooseLoot()
         {
             if (_looseLootCaptured || gameWorld == null) return;
@@ -531,6 +636,11 @@ namespace RAID_REVIEW
             LootTracking = Config.Bind<bool>("Tracking Settings", "Loot Tracking", true, "Enables location tracking of lootings.");
             BallisticsTracking = Config.Bind<bool>("Tracking Settings", "Ballistics Tracking", true, "Enables location tracking of ballistics.");
 
+            EnableLegacyPhobos = Config.Bind<bool>("Legacy Integrations", "Enable legacy Phobos integration", true,
+                "Captures bot-objective data from the legacy upstream Phobos mod (com.janky.phobos). NO SUPPORT — uses reflection (the mod doesn't expose a public API). Disable if you see errors.");
+            EnableLegacyQuestingBots = Config.Bind<bool>("Legacy Integrations", "Enable legacy QuestingBots integration", true,
+                "Captures quest data from the QuestingBots mod (com.danw.questingbots). NO SUPPORT — uses reflection. Disable if you see errors.");
+
             // HTTP/Websocket Endpoint Builders
             RAID_REVIEW_WS_Server = (ServerTLS.Value ? "wss://" : "ws://") + ServerAddress.Value + (ServerWsPort.Value != "" ? ":" + ServerWsPort.Value : "");
             RAID_REVIEW_HTTP_Server = (ServerTLS.Value ? "https://" : "http://") + ServerAddress.Value + (ServerHttpPort.Value != "" ? ":" + ServerHttpPort.Value : "");
@@ -593,6 +703,9 @@ namespace RAID_REVIEW
                             finally
                             {
                                 trackingPlayers = new Dictionary<string, TrackingPlayer>();
+                                _lastBotQuestState.Clear();
+                                _lastBotObjectiveState.Clear();
+                                _seenLayerNames.Clear();
                                 sessionId = null;
                                 stopwatch.Reset();
                             }
@@ -632,6 +745,25 @@ namespace RAID_REVIEW
                     {
                         InitSainReflection();
                         RefreshSainBotCache();
+                    }
+                    // Init QuestingBots reflection once
+                    if (DANW_QUESTINGBOTS__DETECTED)
+                    {
+                        QuestingBots_Integration.InitReflection();
+                    }
+                    // Init legacy Phobos reflection once + refresh agent cache each tick
+                    if (PHOBOS_LEGACY__DETECTED)
+                    {
+                        Phobos_Integration.InitReflection();
+                        Phobos_Integration.RefreshAgentCache();
+                        CaptureLegacyPhobosField();
+                    }
+                    if (ORBIT__DETECTED)
+                    {
+                        Orbit_Integration.InitReflection();
+                        Orbit_Integration.RefreshAgentCache();
+                        CaptureOrbitField();
+                        CaptureOrbitMainObjectives();
                     }
                     foreach (Player player in allPlayers)
                     {
@@ -765,7 +897,7 @@ namespace RAID_REVIEW
                                 // Health Data
                                 ValueStruct commonHealth = player.HealthController.GetBodyPartHealth(EBodyPart.Common, true);
                                 float currentHealth = commonHealth.Current;
-                                float currentHealthMaximum = commonHealth.Current;
+                                float currentHealthMaximum = commonHealth.Maximum;
 
                                 // Bot behavior state
                                 string decision = "";
@@ -794,8 +926,146 @@ namespace RAID_REVIEW
                                     catch { }
                                 }
 
+                                // Override idle/patrol decisions with BigBrain layer name (LootingBots, etc.)
+                                if (player.IsAI && (string.IsNullOrEmpty(decision) || decision == "SAIN:peaceful" || decision == "SAIN:simplePatrol" || decision == "SAIN:standBy"))
+                                {
+                                    try
+                                    {
+                                        var botOwner = player.AIData?.BotOwner;
+                                        var layerName = botOwner?.Brain != null ? botOwner.Brain.ActiveLayerName() : null;
+                                        if (!string.IsNullOrEmpty(layerName))
+                                        {
+                                            // Log unique layer names for debugging
+                                            if (_seenLayerNames.Add(layerName))
+                                                Logger.LogInfo($"RAID_REVIEW :::: BRAIN_LAYER :::: {layerName}");
+
+                                            // BigBrain layer names from various mods
+                                            if (layerName.Contains("Loot"))
+                                                decision = "LootingBots:" + layerName;
+                                            else if (layerName.Contains("Follower") || layerName.Contains("Regroup"))
+                                                decision = "BL:" + layerName;
+                                        }
+                                    }
+                                    catch { }
+                                }
+
+                                // Override idle/patrol decisions with active quest info from QuestingBots
+                                if (DANW_QUESTINGBOTS__DETECTED && player.IsAI)
+                                {
+                                    try
+                                    {
+                                        var qd = QuestingBots_Integration.GetBotQuestData(player, sessionId, captureTime);
+                                        if (qd != null && (qd.status == "Active" || qd.status == "Pending"))
+                                        {
+                                            var isIdleOrPatrol = string.IsNullOrEmpty(decision)
+                                                || decision == "SAIN:peaceful" || decision == "SAIN:simplePatrol"
+                                                || decision == "SAIN:standBy" || decision == "SAIN:Peace";
+                                            if (isIdleOrPatrol)
+                                                decision = "QB:" + qd.questName;
+                                        }
+                                    }
+                                    catch { }
+                                }
+
+                                // Override idle/patrol decisions with ORBIT objective info.
+                                // Legacy Phobos uses an independent integration class — when
+                                // both happen to be (mis-)installed ORBIT wins since it
+                                // carries the richer state surface.
+                                if (ORBIT__DETECTED && player.IsAI)
+                                {
+                                    try
+                                    {
+                                        var od = Orbit_Integration.GetBotObjectiveData(player, sessionId, captureTime);
+                                        if (od != null && od.status == "Moving")
+                                        {
+                                            var isIdleOrPatrol = string.IsNullOrEmpty(decision)
+                                                || decision == "SAIN:peaceful" || decision == "SAIN:simplePatrol"
+                                                || decision == "SAIN:standBy" || decision == "SAIN:Peace";
+                                            if (isIdleOrPatrol)
+                                                decision = "Orbit:" + od.category;
+                                        }
+                                    }
+                                    catch { }
+                                }
+                                else if (PHOBOS_LEGACY__DETECTED && player.IsAI)
+                                {
+                                    try
+                                    {
+                                        var od = Phobos_Integration.GetBotObjectiveData(player, sessionId, captureTime);
+                                        if (od != null && od.status == "Moving")
+                                        {
+                                            var isIdleOrPatrol = string.IsNullOrEmpty(decision)
+                                                || decision == "SAIN:peaceful" || decision == "SAIN:simplePatrol"
+                                                || decision == "SAIN:standBy" || decision == "SAIN:Peace";
+                                            if (isIdleOrPatrol)
+                                                decision = "Phobos:" + od.category;
+                                        }
+                                    }
+                                    catch { }
+                                }
+
                                 var trackingPlayerData = new TrackingPlayerData(sessionId, player.ProfileId, captureTime, playerPosition.x, playerPosition.y, playerPosition.z, dir, currentHealth, currentHealthMaximum, decision);
                                 _ = Telemetry.Send("POSITION", JsonConvert.SerializeObject(trackingPlayerData));
+                            }
+
+                            // QuestingBots: send quest data when it changes
+                            if (DANW_QUESTINGBOTS__DETECTED && player.IsAI)
+                            {
+                                try
+                                {
+                                    var questData = QuestingBots_Integration.GetBotQuestData(player, sessionId, captureTime);
+                                    if (questData != null)
+                                    {
+                                        var stateKey = $"{questData.questName}|{questData.status}|{questData.actionType}";
+                                        _lastBotQuestState.TryGetValue(player.ProfileId, out var lastState);
+                                        if (stateKey != lastState)
+                                        {
+                                            _lastBotQuestState[player.ProfileId] = stateKey;
+                                            _ = Telemetry.Send("BOT_QUEST", JsonConvert.SerializeObject(questData));
+                                        }
+                                    }
+                                }
+                                catch { }
+                            }
+
+                            // Per-bot objective telemetry. Two independent codepaths:
+                            // ORBIT emits ORBIT_BOT_OBJECTIVE, legacy Phobos emits
+                            // BOT_OBJECTIVE (kept for legacy compatibility — gated).
+                            if (ORBIT__DETECTED && player.IsAI)
+                            {
+                                try
+                                {
+                                    var objData = Orbit_Integration.GetBotObjectiveData(player, sessionId, captureTime);
+                                    if (objData != null)
+                                    {
+                                        var stateKey = $"{objData.status}|{objData.category}|{objData.objectiveX:F1}|{objData.objectiveZ:F1}";
+                                        _lastBotObjectiveState.TryGetValue(player.ProfileId, out var lastState);
+                                        if (stateKey != lastState)
+                                        {
+                                            _lastBotObjectiveState[player.ProfileId] = stateKey;
+                                            _ = Telemetry.Send("ORBIT_BOT_OBJECTIVE", JsonConvert.SerializeObject(objData));
+                                        }
+                                    }
+                                }
+                                catch { }
+                            }
+                            else if (PHOBOS_LEGACY__DETECTED && player.IsAI)
+                            {
+                                try
+                                {
+                                    var objData = Phobos_Integration.GetBotObjectiveData(player, sessionId, captureTime);
+                                    if (objData != null)
+                                    {
+                                        var stateKey = $"{objData.status}|{objData.category}|{objData.objectiveX:F1}|{objData.objectiveZ:F1}";
+                                        _lastBotObjectiveState.TryGetValue(player.ProfileId, out var lastState);
+                                        if (stateKey != lastState)
+                                        {
+                                            _lastBotObjectiveState[player.ProfileId] = stateKey;
+                                            _ = Telemetry.Send("BOT_OBJECTIVE", JsonConvert.SerializeObject(objData));
+                                        }
+                                    }
+                                }
+                                catch { }
                             }
 
                         }

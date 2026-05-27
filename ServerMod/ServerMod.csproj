@@ -7,7 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <OutputType>Library</OutputType>
-    <Version>1.0.2</Version>
+    <Version>1.1.0</Version>
     <OutputPath>bin\$(Configuration)\$(AssemblyName)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <!-- Copy NuGet runtime deps to output folder -->
@@ -33,26 +33,21 @@
     </EmbeddedResource>
   </ItemGroup>
 
-  <!-- Deploy to SPT user/mods folder after build with clean structure -->
+  <!-- Deploy to SPT user/mods folder after build with clean structure. -->
   <Target Name="DeployToSpt" AfterTargets="Build">
-    <PropertyGroup>
-      <SptModDir>C:\Games\SPT-4.0\SPT\user\mods\RaidReview</SptModDir>
-    </PropertyGroup>
-    <MakeDir Directories="$(SptModDir);$(SptModDir)\config" />
-    <!-- Main DLL + dependency DLLs (must be flat — SPT scans types before any mod code runs) -->
+    <ItemGroup>
+      <SptInstall Include="C:\Games\SPT-4.0-hardcore\SPT\user\mods\RaidReview" Condition="Exists('C:\Games\SPT-4.0-hardcore\SPT\user\mods')" />
+    </ItemGroup>
     <ItemGroup>
       <ModDlls Include="$(OutputPath)*.dll"
                Exclude="$(OutputPath)SPTarkov.*;$(OutputPath)SemanticVersioning.*;$(OutputPath)JetBrains.*" />
-    </ItemGroup>
-    <Copy SourceFiles="@(ModDlls)" DestinationFolder="$(SptModDir)" SkipUnchangedFiles="true" />
-    <!-- Native SQLite binary — keep in runtimes subfolder so SPT doesn't try to load it as a managed assembly -->
-    <ItemGroup>
       <NativeSqlite Include="$(OutputPath)runtimes\win-x64\native\e_sqlite3.dll" Condition="Exists('$(OutputPath)runtimes\win-x64\native\e_sqlite3.dll')" />
     </ItemGroup>
-    <MakeDir Directories="$(SptModDir)\runtimes\win-x64\native" Condition="@(NativeSqlite) != ''" />
-    <Copy SourceFiles="@(NativeSqlite)" DestinationFolder="$(SptModDir)\runtimes\win-x64\native" SkipUnchangedFiles="true" />
-    <!-- Config -->
-    <Copy SourceFiles="config\config.json" DestinationFolder="$(SptModDir)\config" SkipUnchangedFiles="true" />
+    <MakeDir Directories="%(SptInstall.Identity);%(SptInstall.Identity)\config" />
+    <Copy SourceFiles="@(ModDlls)" DestinationFolder="%(SptInstall.Identity)" SkipUnchangedFiles="true" />
+    <MakeDir Directories="%(SptInstall.Identity)\runtimes\win-x64\native" Condition="@(NativeSqlite) != ''" />
+    <Copy SourceFiles="@(NativeSqlite)" DestinationFolder="%(SptInstall.Identity)\runtimes\win-x64\native" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="config\config.json" DestinationFolder="%(SptInstall.Identity)\config" SkipUnchangedFiles="true" />
   </Target>
 
 </Project>

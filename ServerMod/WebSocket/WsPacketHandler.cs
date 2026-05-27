@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using RaidReview.Database;
 using RaidReview.FileSystem;
+using RaidReview.PostRaid;
 using RaidReview.Session;
 
 namespace RaidReview.WebSocket;
@@ -17,15 +18,17 @@ public class WsPacketHandler
     private readonly SessionManager _sessionManager;
     private readonly DataFileService _fileService;
     private readonly RaidReviewLogger _logger;
+    private readonly ItemResolver _itemResolver;
     private Action<string>? _startPostProcessing;
     private Action? _stopPostProcessing;
 
-    public WsPacketHandler(DatabaseService db, SessionManager sessionManager, DataFileService fileService, RaidReviewLogger logger)
+    public WsPacketHandler(DatabaseService db, SessionManager sessionManager, DataFileService fileService, RaidReviewLogger logger, ItemResolver itemResolver)
     {
         _db = db;
         _sessionManager = sessionManager;
         _fileService = fileService;
         _logger = logger;
+        _itemResolver = itemResolver;
     }
 
     public void SetPostProcessingCallbacks(Action<string> start, Action stop)
@@ -258,10 +261,10 @@ public class WsPacketHandler
                         ("$time", GetString(payload, "time")),
                         ("$qty", GetString(payload, "qty")),
                         ("$itemId", GetString(payload, "itemId")),
-                        ("$itemName", GetString(payload, "itemName")),
+                        ("$itemName", ResolveItemName(payload)),
                         ("$added", GetString(payload, "added")),
                         ("$templateId", GetString(payload, "templateId")),
-                        ("$price", GetString(payload, "price")),
+                        ("$price", ResolvePrice(payload)),
                         ("$x", GetString(payload, "x")),
                         ("$y", GetString(payload, "y")),
                         ("$z", GetString(payload, "z")));
@@ -281,8 +284,8 @@ public class WsPacketHandler
                                 ("$raidId", raidId!),
                                 ("$itemId", GetString(item, "itemId")),
                                 ("$templateId", GetString(item, "templateId")),
-                                ("$itemName", GetString(item, "itemName")),
-                                ("$price", GetString(item, "price")),
+                                ("$itemName", ResolveItemName(item)),
+                                ("$price", ResolvePrice(item)),
                                 ("$qty", GetString(item, "qty")),
                                 ("$x", GetString(item, "x")),
                                 ("$y", GetString(item, "y")),
@@ -308,12 +311,121 @@ public class WsPacketHandler
                                 ("$raidId", raidId!),
                                 ("$profileId", profileId2),
                                 ("$templateId", GetString(item, "templateId")),
-                                ("$itemName", GetString(item, "itemName")),
-                                ("$price", GetString(item, "price")),
+                                ("$itemName", ResolveItemName(item)),
+                                ("$price", ResolvePrice(item)),
                                 ("$qty", GetString(item, "qty")),
                                 ("$slot", GetString(item, "slot")));
                         }
                     }
+                    break;
+                }
+
+                case "BOT_QUEST":
+                {
+                    if (raidId == null) break;
+                    await _db.ExecuteAsync(
+                        @"INSERT INTO bot_quest (raidId, profileId, time, questName, isEFTQuest, actionType, status, objectiveX, objectiveY, objectiveZ)
+                          VALUES ($raidId, $profileId, $time, $questName, $isEFTQuest, $actionType, $status, $objX, $objY, $objZ)",
+                        ("$raidId", raidId!),
+                        ("$profileId", GetString(payload, "profileId")),
+                        ("$time", GetString(payload, "time")),
+                        ("$questName", GetString(payload, "questName")),
+                        ("$isEFTQuest", payload.TryGetProperty("isEFTQuest", out var eft) && eft.GetBoolean() ? "1" : "0"),
+                        ("$actionType", GetString(payload, "actionType")),
+                        ("$status", GetString(payload, "status")),
+                        ("$objX", GetString(payload, "objectiveX")),
+                        ("$objY", GetString(payload, "objectiveY")),
+                        ("$objZ", GetString(payload, "objectiveZ")));
+                    break;
+                }
+
+                case "BOT_OBJECTIVE":
+                {
+                    if (raidId == null) break;
+                    await _db.ExecuteAsync(
+                        @"INSERT INTO bot_objective (raidId, profileId, time, status, category, isLeader, objectiveX, objectiveY, objectiveZ)
+                          VALUES ($raidId, $profileId, $time, $status, $category, $isLeader, $objX, $objY, $objZ)",
+                        ("$raidId", raidId!),
+                        ("$profileId", GetString(payload, "profileId")),
+                        ("$time", GetString(payload, "time")),
+                        ("$status", GetString(payload, "status")),
+                        ("$category", GetString(payload, "category")),
+                        ("$isLeader", payload.TryGetProperty("isLeader", out var ld) && ld.GetBoolean() ? "1" : "0"),
+                        ("$objX", GetString(payload, "objectiveX")),
+                        ("$objY", GetString(payload, "objectiveY")),
+                        ("$objZ", GetString(payload, "objectiveZ")));
+                    break;
+                }
+
+                case "PHOBOS_FIELD":
+                {
+                    if (raidId == null) break;
+                    await _db.ExecuteAsync(
+                        @"INSERT INTO phobos_field (raidId, time, gridCols, gridRows, worldMinX, worldMinZ, cellSize, advection, convergence, zones)
+                          VALUES ($raidId, $time, $gridCols, $gridRows, $worldMinX, $worldMinZ, $cellSize, $advection, $convergence, $zones)",
+                        ("$raidId", raidId!),
+                        ("$time", GetString(payload, "time")),
+                        ("$gridCols", GetString(payload, "gridCols")),
+                        ("$gridRows", GetString(payload, "gridRows")),
+                        ("$worldMinX", GetString(payload, "worldMinX")),
+                        ("$worldMinZ", GetString(payload, "worldMinZ")),
+                        ("$cellSize", GetString(payload, "cellSize")),
+                        ("$advection", GetRawArray(payload, "advection")),
+                        ("$convergence", GetRawArray(payload, "convergence")),
+                        ("$zones", GetRawArray(payload, "zones")));
+                    break;
+                }
+
+                case "ORBIT_FIELD":
+                {
+                    if (raidId == null) break;
+                    // convergence column omitted — defaults to '[]' per schema.
+                    // The player-attraction field isn't captured by ORBIT;
+                    // the column is kept so downstream queries don't have
+                    // to special-case its absence.
+                    await _db.ExecuteAsync(
+                        @"INSERT INTO orbit_field (raidId, time, gridCols, gridRows, worldMinX, worldMinZ, cellSize, advection, zones)
+                          VALUES ($raidId, $time, $gridCols, $gridRows, $worldMinX, $worldMinZ, $cellSize, $advection, $zones)",
+                        ("$raidId", raidId!),
+                        ("$time", GetString(payload, "time")),
+                        ("$gridCols", GetString(payload, "gridCols")),
+                        ("$gridRows", GetString(payload, "gridRows")),
+                        ("$worldMinX", GetString(payload, "worldMinX")),
+                        ("$worldMinZ", GetString(payload, "worldMinZ")),
+                        ("$cellSize", GetString(payload, "cellSize")),
+                        ("$advection", GetRawArray(payload, "advection")),
+                        ("$zones", GetRawArray(payload, "zones")));
+                    break;
+                }
+
+                case "ORBIT_MAIN_OBJECTIVES":
+                {
+                    if (raidId == null) break;
+                    await _db.ExecuteAsync(
+                        @"INSERT INTO orbit_main_objectives (raidId, time, squads)
+                          VALUES ($raidId, $time, $squads)",
+                        ("$raidId", raidId!),
+                        ("$time", GetString(payload, "time")),
+                        ("$squads", GetRawArray(payload, "squads")));
+                    break;
+                }
+
+                case "ORBIT_BOT_OBJECTIVE":
+                {
+                    if (raidId == null) break;
+                    await _db.ExecuteAsync(
+                        @"INSERT INTO orbit_bot_objective (raidId, profileId, time, status, category, isLeader, objectiveX, objectiveY, objectiveZ, extractReason)
+                          VALUES ($raidId, $profileId, $time, $status, $category, $isLeader, $objX, $objY, $objZ, $extractReason)",
+                        ("$raidId", raidId!),
+                        ("$profileId", GetString(payload, "profileId")),
+                        ("$time", GetString(payload, "time")),
+                        ("$status", GetString(payload, "status")),
+                        ("$category", GetString(payload, "category")),
+                        ("$isLeader", payload.TryGetProperty("isLeader", out var ldOrbit) && ldOrbit.GetBoolean() ? "1" : "0"),
+                        ("$objX", GetString(payload, "objectiveX")),
+                        ("$objY", GetString(payload, "objectiveY")),
+                        ("$objZ", GetString(payload, "objectiveZ")),
+                        ("$extractReason", GetString(payload, "extractReason")));
                     break;
                 }
             }
@@ -352,6 +464,39 @@ public class WsPacketHandler
         if (el.TryGetProperty(key, out var v))
             return v.ValueKind == JsonValueKind.Null ? "" : v.ToString();
         return "";
+    }
+
+    // Returns the raw JSON text of a nested array property (for storing as a TEXT blob).
+    private static string GetRawArray(JsonElement el, string key)
+    {
+        if (el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Array)
+            return v.GetRawText();
+        return "[]";
+    }
+
+    /// <summary>
+    /// Returns the itemName from the payload, or looks it up from the SPT locale
+    /// using the templateId as a fallback (Fika headless can't resolve names locally).
+    /// </summary>
+    private string ResolveItemName(JsonElement el)
+    {
+        var name = GetString(el, "itemName");
+        if (!string.IsNullOrEmpty(name)) return name;
+        var templateId = GetString(el, "templateId");
+        return _itemResolver.ResolveShortName(templateId);
+    }
+
+    /// <summary>
+    /// Returns the price from the payload, or looks it up from the handbook
+    /// using the templateId as a fallback.
+    /// </summary>
+    private string ResolvePrice(JsonElement el)
+    {
+        var price = GetString(el, "price");
+        if (!string.IsNullOrEmpty(price) && price != "0") return price;
+        var templateId = GetString(el, "templateId");
+        var resolved = _itemResolver.ResolvePrice(templateId);
+        return resolved > 0 ? resolved.ToString() : price;
     }
 
     // Extracts a CSV header line from the position payload

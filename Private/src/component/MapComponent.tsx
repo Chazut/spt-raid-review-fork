@@ -16,7 +16,7 @@ import { TrackingPositionalData, TrackingLooseLootItem, TrackingPlayerInventoryI
 import { PlayerSlider } from './MapPlayerSlider.js';
 
 import BotMapping from '../assets/botMapping.json'
-import { getMarkerLabel, getPlayerColor, getLegendIcon, PMC_COLORS, buildPmcIndexMap } from '../helpers/players'
+import { getMarkerLabel, getPlayerColor, getLegendIcon, PMC_COLORS, buildPmcIndexMap, getFactionRole } from '../helpers/players'
 import { getBehaviorCategory, BEHAVIOR_CATEGORIES, formatDecisionLabel } from '../helpers/botBehavior'
 
 import 'leaflet/dist/leaflet.css';
@@ -37,6 +37,18 @@ function classifyPlayer(player: any): string {
 
     let botMapping = BotMapping[player.type]
     if (player.name === 'Knight') botMapping = { type: 'GOON' }
+    // Handle bots not in botMapping.json by inferring from the type string "NAME|CATEGORY"
+    if (!botMapping && typeof player.type === 'string' && player.type.includes('|')) {
+        const category = player.type.split('|')[1]
+        const name = player.type.split('|')[0].toLowerCase()
+        if (category === 'FACTION_MOD') {
+            botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' }
+        } else {
+            // Use the category directly (RUAF, UNTAR, SNIPER, etc.) — covers custom
+            // faction-mod bots like Remnant that aren't explicitly mapped
+            botMapping = { type: category }
+        }
+    }
     if (!botMapping) botMapping = { type: 'UNKNOWN' }
 
     switch (botMapping.type) {
@@ -98,10 +110,38 @@ function getLootPriceColor(totalPrice: number): string {
     return '#64748B'                              // slate
 }
 
-function createPlayerMarker(latlng: any, color: string, player: any, proportionalScale: number, opacity: number = 1, pmcIndex?: number, tooltipText?: string, behaviorColor?: string | null): L.Layer {
+// Resolves a Phobos Quest POI's trigger.gameObject.name (e.g.
+// "expl_zone_vremyan_case") to a friendly quest title via the
+// server-built zoneId → title map. SPT quests reference zones by
+// their bare id ("vremyan_case"), but the Unity gameObject often
+// prefixes them ("expl_zone_", "place_", "quest_terminal_"…). Match
+// strategy: exact first, then suffix (triggerName ends with zoneId
+// in the map), then substring. Returns null if no match.
+function resolveQuestName(triggerName: string, map: Record<string, string>): string | null {
+    if (!triggerName || !map) return null
+    if (map[triggerName]) return map[triggerName]
+    let best: string | null = null
+    let bestLen = 0
+    for (const zoneId of Object.keys(map)) {
+        if (zoneId.length < 4) continue // skip 1-2 char numeric ids that match anything
+        if (triggerName === zoneId
+            || triggerName.endsWith(zoneId)
+            || triggerName.includes(zoneId)) {
+            if (zoneId.length > bestLen) { best = map[zoneId]; bestLen = zoneId.length }
+        }
+    }
+    return best
+}
+
+function createPlayerMarker(latlng: any, color: string, player: any, proportionalScale: number, opacity: number = 1, pmcIndex?: number, tooltipText?: string, behaviorColor?: string | null, hpPercent?: number): L.Layer {
     const displayName = tooltipText || getDisplayName(player)
     const tooltipOpts: L.TooltipOptions = { direction: 'top', offset: [0, -10], className: 'player-tooltip' }
     const ringStyle = behaviorColor ? `box-shadow: 0 0 0 3px ${behaviorColor}, 0 0 6px 1px ${behaviorColor}55;` : ''
+    // HP fill: gradient from bottom (color) to top (dark) based on HP percentage
+    const hp = hpPercent != null ? Math.max(0, Math.min(100, hpPercent)) : 100
+    const bgStyle = hp < 100
+        ? `background: linear-gradient(to top, ${color} ${hp}%, rgba(30,30,30,0.8) ${hp}%);`
+        : `background-color: ${color};`
     const label = getMarkerLabel(player)
     if (label === 'BTR_ICON') {
         const btrSvg = `<svg viewBox="0 0 24 18" width="24" height="18" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="3" width="20" height="8" rx="1" fill="${color}" opacity="${opacity}"/><rect x="5" y="1" width="10" height="4" rx="1" fill="${color}" opacity="${opacity}"/><line x1="15" y1="3" x2="20" y2="5" stroke="${color}" stroke-width="1.2" opacity="${opacity}"/><circle cx="5.5" cy="13.5" r="2.5" fill="${color}" opacity="${opacity}"/><circle cx="12" cy="13.5" r="2.5" fill="${color}" opacity="${opacity}"/><circle cx="18.5" cy="13.5" r="2.5" fill="${color}" opacity="${opacity}"/><circle cx="5.5" cy="13.5" r="1" fill="#1a1a1a"/><circle cx="12" cy="13.5" r="1" fill="#1a1a1a"/><circle cx="18.5" cy="13.5" r="1" fill="#1a1a1a"/></svg>`
@@ -116,7 +156,7 @@ function createPlayerMarker(latlng: any, color: string, player: any, proportiona
     if (label) {
         const icon = L.divIcon({
             className: 'special-bot-marker',
-            html: `<div class="bot-marker-dot" style="background-color: ${color}; opacity: ${opacity}; ${ringStyle}">${label}</div>`,
+            html: `<div class="bot-marker-dot" style="${bgStyle} opacity: ${opacity}; ${ringStyle}">${label}</div>`,
             iconSize: [18, 18],
             iconAnchor: [9, 9],
         })
@@ -126,24 +166,21 @@ function createPlayerMarker(latlng: any, color: string, player: any, proportiona
     if (pmcIndex !== undefined) {
         const icon = L.divIcon({
             className: 'special-bot-marker',
-            html: `<div class="bot-marker-dot bot-marker-round" style="background-color: ${color}; opacity: ${opacity}; ${ringStyle}">${pmcIndex}</div>`,
+            html: `<div class="bot-marker-dot bot-marker-round" style="${bgStyle} opacity: ${opacity}; ${ringStyle}">${pmcIndex}</div>`,
             iconSize: [18, 18],
             iconAnchor: [9, 9],
         })
         return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, { ...tooltipOpts, className: 'player-tooltip player-tooltip-html' })
     }
-    // Scavs: plain circle — use divIcon for behavior ring support
-    if (behaviorColor) {
-        const size = Math.max(10, proportionalScale * 2)
-        const icon = L.divIcon({
-            className: 'special-bot-marker',
-            html: `<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};opacity:${opacity};${ringStyle}"></div>`,
-            iconSize: [size, size],
-            iconAnchor: [size / 2, size / 2],
-        })
-        return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, { ...tooltipOpts, className: 'player-tooltip player-tooltip-html' })
-    }
-    return L.circle(latlng, { radius: proportionalScale, color, fillOpacity: opacity, fillRule: 'nonzero', opacity }).bindTooltip(displayName, tooltipOpts)
+    // Scavs: plain circle — always use divIcon for HP fill + behavior ring support
+    const size = Math.max(10, proportionalScale * 2)
+    const icon = L.divIcon({
+        className: 'special-bot-marker',
+        html: `<div style="width:${size}px;height:${size}px;border-radius:50%;${bgStyle}opacity:${opacity};${ringStyle}"></div>`,
+        iconSize: [size, size],
+        iconAnchor: [size / 2, size / 2],
+    })
+    return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, { ...tooltipOpts, className: 'player-tooltip player-tooltip-html' })
 }
 import '../modules/leaflet-heat.js'
 import './Map.css'
@@ -294,6 +331,114 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     const [looseLootCollapsed, setLooseLootCollapsed] = useState(true)
     const looseLootLayerRef = useRef<L.LayerGroup | null>(null)
     const looseLootHighlightRef = useRef<L.CircleMarker | null>(null)
+
+    // Bot Quests (QuestingBots integration)
+    const [showBotQuests, setShowBotQuests] = useState(() => localStorage.getItem('rr_showBotQuests') !== 'false')
+    const [botQuestData, setBotQuestData] = useState<any[]>([])
+    const [botQuestCollapsed, setBotQuestCollapsed] = useState(true)
+    const botQuestLayerRef = useRef<L.LayerGroup | null>(null)
+
+    // Bot Objectives (Phobos integration)
+    const [showBotObjectives, setShowBotObjectives] = useState(() => localStorage.getItem('rr_showBotObjectives') !== 'false')
+    const [botObjectiveData, setBotObjectiveData] = useState<any[]>([])
+    const [botObjectiveCollapsed, setBotObjectiveCollapsed] = useState(true)
+    const botObjectiveLayerRef = useRef<L.LayerGroup | null>(null)
+
+    // Phobos advection field
+    const [showPhobosField, setShowPhobosField] = useState(() => localStorage.getItem('rr_showPhobosField') === 'true')
+    const [showPhobosAdvection, setShowPhobosAdvection] = useState(() => localStorage.getItem('rr_showPhobosAdvection') !== 'false')
+    // Convergence is a Phobos v1 concept (player-attraction field).
+    // ORBIT dropped it. The toggle below is only surfaced when at
+    // least one snapshot actually carries non-empty convergence data
+    // (i.e. the raid was recorded with legacy upstream Phobos).
+    const [showPhobosConvergence, setShowPhobosConvergence] = useState(() => localStorage.getItem('rr_showPhobosConvergence') !== 'false')
+    const [showPhobosZones, setShowPhobosZones] = useState(() => localStorage.getItem('rr_showPhobosZones') !== 'false')
+    const [phobosFieldData, setPhobosFieldData] = useState<any[]>([])
+    const [phobosFieldCollapsed, setPhobosFieldCollapsed] = useState(true)
+    const phobosFieldLayerRef = useRef<L.LayerGroup | null>(null)
+
+    // Per-main marker refs aligned with the squad-mains sidebar list,
+    // populated by the markers-render effect. The sidebar rows call
+    // openTooltip / closeTooltip on these to highlight the matching
+    // marker on the map when the user hovers a row.
+    const orbitMainObjectiveMarkersRef = useRef<L.CircleMarker[]>([])
+
+    // Phobos main objectives (ORBIT-only) — debug overlay. Per-squad
+    // list of 1-5 long-term goals (Kills / LootValue / Quest), rendered
+    // as numbered colour-coded markers when the user clicks a bot to
+    // select that squad. Click again on any bot → hide.
+    const [orbitMainObjectivesData, setOrbitMainObjectivesData] = useState<any[]>([])
+    const [selectedSquadForMains, setSelectedSquadForMains] = useState<number | null>(null)
+    const orbitMainObjectivesLayerRef = useRef<L.LayerGroup | null>(null)
+
+    // Mirror the snapshot array into a ref so the click handler (bound
+    // once inside the position-renderer effect, which does NOT depend on
+    // this data) reads the freshest value rather than a stale closure
+    // from the render where the array was still empty.
+    const orbitMainObjectivesDataRef = useRef<any[]>([])
+    useEffect(() => { orbitMainObjectivesDataRef.current = orbitMainObjectivesData }, [orbitMainObjectivesData])
+
+    // Squad membership is captured per snapshot (~30s). Two failure
+    // modes the naive `latest snapshot ≤ cursor` lookup handles badly:
+    //   1. Early raid (first ~30s): no snapshot exists at all because
+    //      SAIN brains haven't applied yet, so no squad has mains.
+    //   2. Dead bot / disbanded squad late in raid: the squad drops out
+    //      of all snapshots after the last member dies.
+    // Both helpers scan all snapshots — findSquadIdForPlayer ignores the
+    // cursor entirely (a bot's squad identity doesn't depend on cursor
+    // position), findLatestSquadEntry prefers ≤ cursor for an accurate
+    // completion-state render but falls back to any-time so the sidebar
+    // shows something useful instead of going blank.
+    const findSquadIdForPlayer = (playerId: string): number | null => {
+        const data = orbitMainObjectivesDataRef.current
+        for (let i = data.length - 1; i >= 0; i--) {
+            const snap = data[i]
+            const entry = (snap.squads || []).find((s: any) =>
+                s.memberProfileIds && s.memberProfileIds.includes(playerId))
+            if (entry) return Number(entry.squadId)
+        }
+        return null
+    }
+    const findLatestSquadEntry = (squadId: number, atTime: number): any => {
+        const data = orbitMainObjectivesDataRef.current
+        let best: any = null
+        let bestTime = -Infinity
+        for (const snap of data) {
+            if (snap.time > atTime) continue
+            const entry = (snap.squads || []).find((s: any) => Number(s.squadId) === squadId)
+            if (entry && snap.time > bestTime) { best = entry; bestTime = snap.time }
+        }
+        if (best) return best
+        // No snapshot ≤ cursor contains this squad. Most common cause:
+        // cursor sits in the first ~30s before SAIN has applied brains
+        // and any mains exist. Fall back to the EARLIEST future snapshot
+        // (first known state) — otherwise picking the latest would
+        // pre-spoil every main as 'completed' before the squad has even
+        // had a chance to start them.
+        let earliestFuture: any = null
+        let earliestTime = Infinity
+        for (const snap of data) {
+            if (snap.time <= atTime) continue
+            const entry = (snap.squads || []).find((s: any) => Number(s.squadId) === squadId)
+            if (entry && snap.time < earliestTime) { earliestFuture = entry; earliestTime = snap.time }
+        }
+        return earliestFuture
+    }
+    // SPT quest name lookup (zoneId → friendly title). Fetched once per
+    // app load. Used to resolve user-facing names on Phobos Quest POI
+    // tooltips + main objectives sidebar list (trigger IDs like
+    // "expl_zone_vremyan_case" are not human-friendly).
+    const [questNameMap, setQuestNameMap] = useState<Record<string, string>>({})
+
+    // Animations section
+    const [animationsCollapsed, setAnimationsCollapsed] = useState(true)
+    const [showHitFlash, setShowHitFlash] = useState(() => localStorage.getItem('rr_showHitFlash') !== 'false')
+    const hitFlashTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+    const prevTimeHitRef = useRef<number>(0)
+
+    // Loot float animations
+    const [showLootFloats, setShowLootFloats] = useState(() => localStorage.getItem('rr_showLootFloats') !== 'false')
+    const prevTimeEndLimitRef = useRef<number>(0)
 
     // Bot Inventory
     const [botInvCollapsed, setBotInvCollapsed] = useState(true)
@@ -758,27 +903,76 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 pl._rr_normalOpacity = preserveHistory ? 0.8 : isPlayerDead ? 0 : 0.8
 
                 if (!isPlayerDead) {
-                    // Get latest behavior decision from position data (skip BTR)
+                    // Get latest behavior decision + health from position data (skip BTR)
                     const isBTR = player?.type?.includes('BTR')
                     let currentDecision: string | undefined
+                    let currentHealth: number | undefined
+                    let maxHealth: number | undefined
                     let behaviorCat = null
                     let behaviorLine = ''
-                    if (showBehavior && !isBTR) {
-                        const pp = positions[playerId]
-                        if (pp) {
-                            for (let di = pp.length - 1; di >= 0; di--) {
-                                if (pp[di].time <= timeEndLimit) {
-                                    currentDecision = pp[di].decision
-                                    break
-                                }
+                    let healthLine = ''
+                    const pp = positions[playerId]
+                    if (pp) {
+                        for (let di = pp.length - 1; di >= 0; di--) {
+                            if (pp[di].time <= timeEndLimit) {
+                                currentDecision = pp[di].decision
+                                currentHealth = pp[di].health
+                                maxHealth = pp[di].maxHealth
+                                break
                             }
                         }
+                    }
+                    if (showBehavior && !isBTR) {
                         behaviorCat = getBehaviorCategory(currentDecision)
                         behaviorLine = `<br/><span style="color:${behaviorCat.color}">${behaviorCat.label}</span>${currentDecision ? ': ' + formatDecisionLabel(currentDecision) : ''}`
                     }
-                    const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})${behaviorLine}`
+                    if (currentHealth != null && maxHealth != null && maxHealth > 0) {
+                        const pct = Math.round((currentHealth / maxHealth) * 100)
+                        const hpColor = pct > 60 ? '#22C55E' : pct > 30 ? '#F59E0B' : '#EF4444'
+                        healthLine = `<br/><span style="color:${hpColor}">\u2764 ${Math.round(currentHealth)}/${Math.round(maxHealth)} (${pct}%)</span>`
+                    }
+                    // Build loot summary for this player up to current time
+                    let lootLine = ''
+                    if (raidData?.looting) {
+                        const playerLoot = raidData.looting.filter(l => {
+                            const added = l.added === 'True' || l.added === 'true' || l.added === '1'
+                            return l.profileId === playerId && added && Number(l.time) <= timeEndLimit
+                        })
+                        if (playerLoot.length > 0) {
+                            const totalValue = playerLoot.reduce((sum, l) => sum + (l.price || 0) * Number(l.qty || 1), 0)
+                            const top3 = [...playerLoot].sort((a, b) => (b.price || 0) * Number(b.qty || 1) - (a.price || 0) * Number(a.qty || 1)).slice(0, 3)
+                            const itemList = top3.map(l => {
+                                const p = (l.price || 0) * Number(l.qty || 1)
+                                return `${l.itemName || l.name}${p > 0 ? ' \u20BD' + p.toLocaleString() : ''}`
+                            }).join(', ')
+                            lootLine = `<br/><span style="color:#FACC15">\u{1F4E6} ${playerLoot.length} items</span> (\u20BD${totalValue.toLocaleString()})<br/><span style="font-size:10px;opacity:0.7">${itemList}${playerLoot.length > 3 ? '...' : ''}</span>`
+                        }
+                    }
+                    // Extract objective hint: when the bot's latest
+                    // Phobos objective is an Exfil POI, surface the
+                    // squad-wide ExtractRequested reason (loot ≥ Xk₽,
+                    // all mains done, raid time low) so the user can
+                    // see WHY the bot is extracting, not just where.
+                    let extractLine = ''
+                    if (botObjectiveData && botObjectiveData.length > 0) {
+                        let latestObj: any = null
+                        for (const o of botObjectiveData) {
+                            if (o.profileId !== playerId) continue
+                            const t = Number(o.time)
+                            if (t > timeEndLimit) continue
+                            if (!latestObj || t > Number(latestObj.time)) latestObj = o
+                        }
+                        if (latestObj && latestObj.category === 'Exfil') {
+                            const reason = latestObj.extractReason && String(latestObj.extractReason).trim().length > 0
+                                ? String(latestObj.extractReason).trim()
+                                : 'extract requested'
+                            extractLine = `<br/><span style="color:#60A5FA">\u{1F6AA} Extracting: ${reason}</span>`
+                        }
+                    }
+                    const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})${healthLine}${behaviorLine}${extractLine}${lootLine}`
                     const ringColor = behaviorCat && behaviorCat.key !== 'idle' && behaviorCat.key !== 'patrol' ? behaviorCat.color : undefined
-                    const marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, markerOpacity, pmcIndexMap[playerId], tip, ringColor)
+                    const hpPct = (currentHealth != null && maxHealth != null && maxHealth > 0) ? Math.round((currentHealth / maxHealth) * 100) : undefined
+                    const marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, markerOpacity, pmcIndexMap[playerId], tip, ringColor, hpPct)
                     marker._rr_playerId = playerId
                     marker._rr_isDead = false
                     marker._rr_normalOpacity = 1
@@ -804,6 +998,20 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             layer.on('mouseout', () => {
                 if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current)
                 focusTimeoutRef.current = setTimeout(() => setPlayerFocus(null), 100)
+            })
+            // ORBIT main objectives: click any bot marker to toggle
+            // the per-squad mains overlay. If THAT squad is already
+            // selected, click hides it. If a different squad's mains
+            // are showing, the click swaps to the new squad. If no
+            // squad's mains data exists for this bot (bot scav / boss
+            // / raider — they skip the system), the click is a no-op.
+            layer.on('click', () => {
+                // Scan all snapshots (not just ≤ timeEndLimit) so a dead
+                // bot's dot still resolves to its historic squad. See
+                // findSquadIdForPlayer for the why.
+                const sqId = findSquadIdForPlayer(playerId)
+                if (sqId == null) return
+                setSelectedSquadForMains(prev => prev === sqId ? null : sqId)
             })
         }
 
@@ -1081,12 +1289,134 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         });
     }, [sliderTimes, timeCurrentIndex]);    
 
-    // Ballistics Update
+    // Ballistics Update (with grenade detection)
     let ballisticsLayers = new Map();
     useEffect(() => {
         if (hideBallistics) return;
         if (!mapIsReady || !MAP) return;
 
+        // Grenade visualization: detect throws from behavior decisions, match to ballistic clusters
+        // Step 1: Find grenade throw moments from position decisions
+        const grenadeThrows: { profileId: string, time: number, x: number, z: number }[] = []
+        const posData = positions as any
+        if (posData) {
+            for (const [profileId, pArr] of Object.entries(posData)) {
+                if (!Array.isArray(pArr)) continue
+                for (let pi = 0; pi < pArr.length; pi++) {
+                    const p = pArr[pi]
+                    const dec = (p.decision || '')
+                    const decLower = dec.toLowerCase()
+                    const isGrenadeDec = decLower.includes('throwgrenade') || decLower.includes('runandthrowgrenade') || decLower === 'sain:throwgrenade'
+                    if (!isGrenadeDec) continue
+                    // Only record the first tick of each throw sequence
+                    if (pi > 0) {
+                        const prevDec = (pArr[pi - 1].decision || '').toLowerCase()
+                        const prevIsGrenade = prevDec.includes('throwgrenade') || prevDec.includes('runandthrowgrenade') || prevDec === 'sain:throwgrenade'
+                        if (prevIsGrenade) continue
+                    }
+                    grenadeThrows.push({ profileId, time: Number(p.time), x: Number(p.x), z: Number(p.z) })
+                }
+            }
+        }
+
+        // Step 2: Build ballistic clusters (group by profileId + time)
+        const ballisticClusters: Record<string, { src: any, time: number, count: number, weaponName: string }> = {}
+        for (const b of raidData.ballistic) {
+            try {
+                const src = JSON.parse(b.source)
+                const key = `${b.profileId}_${b.time}`
+                if (!ballisticClusters[key]) {
+                    ballisticClusters[key] = { src, time: b.time, count: 0, weaponName: b.weaponName || '' }
+                }
+                ballisticClusters[key].count++
+            } catch {}
+        }
+
+        // Step 3: Match throws to explosion clusters (same bot, within 10s, 3+ fragments, source far from bot)
+        const grenadeExplosions: { throwTime: number, throwX: number, throwZ: number, explosionX: number, explosionZ: number, explosionTime: number, profileId: string, weaponName: string }[] = []
+        for (const gt of grenadeThrows) {
+            let bestKey = ''
+            let bestDt = Infinity
+            for (const [key, cluster] of Object.entries(ballisticClusters)) {
+                if (!key.startsWith(gt.profileId + '_')) continue
+                if (cluster.count < 3) continue
+                const dt = cluster.time - gt.time
+                if (dt < 0 || dt > 10000) continue
+                // Explosion source must be far from the bot's throw position (> 5m)
+                // If source is near the bot, it's regular gunfire, not a grenade landing
+                const dx = cluster.src.x - gt.x
+                const dz = cluster.src.z - gt.z
+                const distSq = dx * dx + dz * dz
+                if (distSq < 25) continue // 5m minimum distance
+                if (dt < bestDt) { bestDt = dt; bestKey = key }
+            }
+            if (bestKey) {
+                const cluster = ballisticClusters[bestKey]
+                grenadeExplosions.push({
+                    throwTime: gt.time, throwX: gt.x, throwZ: gt.z,
+                    explosionX: cluster.src.x, explosionZ: cluster.src.z,
+                    explosionTime: cluster.time, profileId: gt.profileId,
+                    weaponName: cluster.weaponName
+                })
+            }
+        }
+
+        // Clean up expired grenade layers
+        if (MAP) {
+            for (const key in MAP._layers) {
+                const layer = MAP._layers[key]
+                if (!layer._rr_grenade) continue
+                if (!layer.eventTime) continue
+                const idx = findInsertIndex(layer.eventTime, sliderTimes)
+                if (idx + 40 < timeCurrentIndex || idx > timeCurrentIndex) {
+                    MAP.removeLayer(layer)
+                    if (layer.eventId) ballisticsLayers.delete(layer.eventId)
+                }
+            }
+        }
+
+        // Render grenade arcs + explosion circles (alongside normal ballistics, not replacing them)
+        for (const ge of grenadeExplosions) {
+            const throwIndex = findInsertIndex(ge.throwTime, sliderTimes)
+            const explosionIndex = findInsertIndex(ge.explosionTime, sliderTimes)
+            if (throwIndex > timeCurrentIndex || explosionIndex + 40 < timeCurrentIndex) continue
+
+            const grenadeId = `grenade-${ge.profileId}-${ge.throwTime}`
+            if (ballisticsLayers.get(grenadeId)) continue
+
+            // Explosion circle
+            const explosionCircle = L.circle([ge.explosionZ, ge.explosionX], {
+                radius: 3, color: '#FF6B35', weight: 2,
+                fillColor: '#FF6B35', fillOpacity: 0.2, dashArray: '3 3',
+            })
+            explosionCircle.eventTime = ge.explosionTime
+            explosionCircle.eventType = 'ballisticsLine'
+            explosionCircle.eventId = grenadeId
+            const player = raidData?.players?.find(p => p.profileId === ge.profileId)
+            const throwerName = player?.name || ge.profileId.slice(0, 8)
+            explosionCircle.bindTooltip(
+                `\u{1F4A5} <strong>${throwerName}</strong> — ${ge.weaponName || 'Grenade'}`,
+                { direction: 'top', offset: [0, -8], className: 'player-tooltip player-tooltip-html' }
+            )
+            explosionCircle._rr_grenade = true
+            explosionCircle.addTo(MAP)
+
+            // Arc from throw position to explosion
+            const arcLine = L.polyline(
+                [[ge.throwZ, ge.throwX], [ge.explosionZ, ge.explosionX]],
+                { color: '#FF6B35', weight: 2.5, dashArray: '6 4', opacity: 0.8 }
+            )
+            arcLine.eventTime = ge.throwTime
+            arcLine.eventType = 'ballisticsLine'
+            arcLine.eventId = grenadeId + '_arc'
+            arcLine._rr_grenade = true
+            arcLine.addTo(MAP)
+
+            ballisticsLayers.set(grenadeId, true)
+            ballisticsLayers.set(grenadeId + '_arc', true)
+        }
+
+        // Render normal ballistics (all, including grenade fragments)
         const createdLayers = new Map();
         for (let i = 0; i < raidData.ballistic.length; i++) {
             const ballistic = raidData.ballistic[i];
@@ -1101,17 +1431,16 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 let ballisticsId = `${i}-${ballistic.time}-${source.z}-${source.x}-${target.z}-${target.x}`;
                 let exists = ballisticsLayers.get(ballisticsId);
 
-                let hit = !!ballistic.hitPlayerId;
                 if (!exists && (target && source)) {
                     const pickedColor = calculatedPlayerInfo[ballistic.profileId]?.pickedColor;
                     const position = [[source.z, source.x], [target.z, target.x]];
 
-                    const polyline = L.polyline(position, { 
-                        color: pickedColor ? pickedColor : 'red', 
-                        weight: 1, 
-                        opacity: 0.5, 
-                        fillOpacity: 0.5, 
-                        dashOffset: 2, 
+                    const polyline = L.polyline(position, {
+                        color: pickedColor ? pickedColor : 'red',
+                        weight: 1,
+                        opacity: 0.5,
+                        fillOpacity: 0.5,
+                        dashOffset: 2,
                         dashArray: [2, 6, 2]
                     });
                     polyline.eventTime = ballistic.time;
@@ -1119,10 +1448,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                     polyline.eventType = 'ballisticsLine';
                     polyline.eventId = ballisticsId;
 
-                    if (MAP) {
-                        polyline.addTo(MAP);
-                    }
-
+                    polyline.addTo(MAP);
                     ballisticsLayers.set(ballisticsId, true);
                 }
             }
@@ -1177,13 +1503,37 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         })()
     }, [showLooseLoot, raidId])
 
-    // Loose Loot: persist settings to localStorage
+    // Persist settings to localStorage
     useEffect(() => {
         localStorage.setItem('rr_looseLoot_minPrice', String(looseLootMinPrice))
     }, [looseLootMinPrice])
     useEffect(() => {
         localStorage.setItem('rr_looseLoot_filter', looseLootFilter)
     }, [looseLootFilter])
+    useEffect(() => {
+        localStorage.setItem('rr_showLootFloats', String(showLootFloats))
+    }, [showLootFloats])
+    useEffect(() => {
+        localStorage.setItem('rr_showBotQuests', String(showBotQuests))
+    }, [showBotQuests])
+    useEffect(() => {
+        localStorage.setItem('rr_showBotObjectives', String(showBotObjectives))
+    }, [showBotObjectives])
+    useEffect(() => {
+        localStorage.setItem('rr_showPhobosField', String(showPhobosField))
+    }, [showPhobosField])
+    useEffect(() => {
+        localStorage.setItem('rr_showPhobosAdvection', String(showPhobosAdvection))
+    }, [showPhobosAdvection])
+    useEffect(() => {
+        localStorage.setItem('rr_showPhobosConvergence', String(showPhobosConvergence))
+    }, [showPhobosConvergence])
+    useEffect(() => {
+        localStorage.setItem('rr_showPhobosZones', String(showPhobosZones))
+    }, [showPhobosZones])
+    useEffect(() => {
+        localStorage.setItem('rr_showHitFlash', String(showHitFlash))
+    }, [showHitFlash])
 
     // Build set of picked-up item IDs before current timeline position
     const pickedUpItemIds = useMemo(() => {
@@ -1336,6 +1686,628 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             }
         }
     }, [MAP, mapIsReady, showLooseLoot, looseLootData, looseLootMinPrice, looseLootFilter, pickedUpItemIds, raidData?.looting, timeEndLimit])
+
+    // Bot Quests: always fetch data (panel visibility depends on data existing)
+    useEffect(() => {
+        if (botQuestData.length > 0) return
+        ;(async () => {
+            const data = await api.getRaidBotQuests(raidId)
+            if (data && data.length > 0) {
+                setBotQuestData(data)
+            }
+        })()
+    }, [raidId])
+
+    // Bot Quests: render objective markers on map (timeline-aware)
+    useEffect(() => {
+        if (!MAP || !mapIsReady) return
+
+        if (botQuestLayerRef.current) {
+            MAP.removeLayer(botQuestLayerRef.current)
+            botQuestLayerRef.current = null
+        }
+
+        if (!showBotQuests || botQuestData.length === 0) return
+
+        const group = L.layerGroup()
+
+        // Build a map of the latest quest state per bot at current timeline position
+        const latestByBot: Record<string, any> = {}
+        for (const q of botQuestData) {
+            const t = Number(q.time)
+            if (t > timeEndLimit) continue
+            const prev = latestByBot[q.profileId]
+            if (!prev || t > Number(prev.time)) {
+                latestByBot[q.profileId] = q
+            }
+        }
+
+        const actionIcons: Record<string, string> = {
+            'MoveToPosition': '\u{1F6B6}',    // walking
+            'HoldAtPosition': '\u{1F6D1}',    // stop sign
+            'Ambush': '\u{1F52B}',             // gun
+            'Snipe': '\u{1F3AF}',              // target
+            'PlantItem': '\u{1F4E6}',          // package
+            'ToggleSwitch': '\u{1F511}',       // key
+            'RequestExtract': '\u{1F6AA}',     // door
+            'CloseNearbyDoors': '\u{1F510}',   // lock
+        }
+
+        // Build set of dead bot profileIds at current timeline
+        const deadBots = new Set<string>()
+        if (raidData?.kills) {
+            for (const k of raidData.kills) {
+                if (Number(k.time) <= timeEndLimit) deadBots.add(k.killedId)
+            }
+        }
+
+        for (const [profileId, q] of Object.entries(latestByBot)) {
+            if (q.status === 'Completed' || q.status === 'Archived' || q.status === 'Failed') continue
+            if (deadBots.has(profileId)) continue
+            const x = Number(q.objectiveX)
+            const z = Number(q.objectiveZ)
+            if (x === 0 && z === 0) continue
+
+            // Find bot name from raid data
+            const player = raidData?.players?.find(p => p.profileId === profileId)
+            const botName = player ? (player.name || profileId) : profileId
+            const icon = actionIcons[q.actionType] || '\u2753' // question mark fallback
+            const isEFT = q.isEFTQuest === 1 || q.isEFTQuest === true
+
+            const marker = L.circleMarker([z, x], {
+                radius: 6,
+                color: isEFT ? '#FBCFE8' : '#D946EF',
+                weight: 2,
+                fillColor: isEFT ? 'rgba(251,207,232,0.3)' : 'rgba(217,70,239,0.3)',
+                fillOpacity: 0.7,
+                interactive: true,
+            })
+
+            marker.bindTooltip(
+                `${icon} <strong>${botName}</strong><br/>${q.questName}<br/><em>${q.actionType}</em> (${q.status})${isEFT ? '<br/><span style="color:#FBCFE8">EFT Quest</span>' : ''}`,
+                { direction: 'top', offset: [0, -8], className: 'player-tooltip player-tooltip-html' }
+            )
+            marker._rr_quest = true
+            group.addLayer(marker)
+
+            // Draw a dashed line from bot's current position to the objective
+            const posData = positions as any
+            if (posData && typeof posData === 'object') {
+                const botPositions = posData[profileId]
+                if (Array.isArray(botPositions) && botPositions.length > 0) {
+                    let closest = botPositions[0]
+                    for (const pos of botPositions) {
+                        if (Number(pos.time) <= timeEndLimit && Number(pos.time) >= Number(closest.time)) {
+                            closest = pos
+                        }
+                    }
+                    if (closest) {
+                        const line = L.polyline(
+                            [[Number(closest.z), Number(closest.x)], [z, x]],
+                            { color: isEFT ? '#FBCFE8' : '#D946EF', weight: 1, dashArray: '4 4', opacity: 0.5 }
+                        )
+                        line._rr_quest = true
+                        group.addLayer(line)
+                    }
+                }
+            }
+        }
+
+        group.addTo(MAP)
+        botQuestLayerRef.current = group
+
+        return () => {
+            if (botQuestLayerRef.current && MAP) {
+                MAP.removeLayer(botQuestLayerRef.current)
+                botQuestLayerRef.current = null
+            }
+        }
+    }, [MAP, mapIsReady, showBotQuests, botQuestData, timeEndLimit, raidData?.players, raidData?.kills, positions])
+
+    // Bot Objectives (legacy Phobos / ORBIT): always fetch data (panel
+    // visibility depends on data existing). Pulls from BOTH the legacy
+    // bot_objective table and the orbit_bot_objective table and merges.
+    // Only one is populated at runtime — the legacy fetch is harmless
+    // when no row exists and lets old raid replays keep rendering.
+    useEffect(() => {
+        if (botObjectiveData.length > 0) return
+        ;(async () => {
+            const [legacy, v2] = await Promise.all([
+                api.getRaidBotObjectives(raidId),
+                api.getRaidOrbitBotObjectives(raidId),
+            ])
+            const merged = [...(legacy || []), ...(v2 || [])]
+            if (merged.length > 0) {
+                setBotObjectiveData(merged)
+            }
+        })()
+    }, [raidId])
+
+    // Bot Objectives (Phobos): render destination markers on map (timeline-aware)
+    useEffect(() => {
+        if (!MAP || !mapIsReady) return
+
+        if (botObjectiveLayerRef.current) {
+            MAP.removeLayer(botObjectiveLayerRef.current)
+            botObjectiveLayerRef.current = null
+        }
+
+        if (!showBotObjectives || botObjectiveData.length === 0) return
+
+        const group = L.layerGroup()
+
+        // Latest objective per bot at current timeline position
+        const latestByBot: Record<string, any> = {}
+        for (const o of botObjectiveData) {
+            const t = Number(o.time)
+            if (t > timeEndLimit) continue
+            const prev = latestByBot[o.profileId]
+            if (!prev || t > Number(prev.time)) {
+                latestByBot[o.profileId] = o
+            }
+        }
+
+        // Category → icon + color (Phobos LocationCategory)
+        const categoryStyle: Record<string, { icon: string, color: string }> = {
+            'ContainerLoot': { icon: '\u{1F4E6}', color: '#FACC15' }, // package, yellow
+            'LooseLoot':     { icon: '\u{1F48E}', color: '#FBBF24' }, // gem, amber
+            'Quest':         { icon: '\u{1F4CB}', color: '#D946EF' }, // clipboard, fuchsia
+            'Synthetic':     { icon: '\u{1F500}', color: '#38BDF8' }, // shuffle, sky
+            'Exfil':         { icon: '\u{1F6AA}', color: '#2DD4BF' }, // door, teal
+        }
+
+        // Dead bots at current timeline
+        const deadBots = new Set<string>()
+        if (raidData?.kills) {
+            for (const k of raidData.kills) {
+                if (Number(k.time) <= timeEndLimit) deadBots.add(k.killedId)
+            }
+        }
+
+        for (const [profileId, o] of Object.entries(latestByBot)) {
+            if (o.status !== 'Moving') continue
+            if (deadBots.has(profileId)) continue
+            const x = Number(o.objectiveX)
+            const z = Number(o.objectiveZ)
+            if (x === 0 && z === 0) continue
+
+            const player = raidData?.players?.find(p => p.profileId === profileId)
+            const botName = player ? (player.name || profileId) : profileId
+            const style = categoryStyle[o.category] || { icon: '❓', color: '#94A3B8' }
+            const isLeader = o.isLeader === 1 || o.isLeader === true
+
+            const marker = L.circleMarker([z, x], {
+                radius: isLeader ? 7 : 5,
+                color: style.color,
+                weight: isLeader ? 3 : 2,
+                fillColor: style.color,
+                fillOpacity: 0.3,
+                interactive: true,
+            })
+            marker.bindTooltip(
+                `${style.icon} <strong>${botName}</strong>${isLeader ? ' ★' : ''}<br/><em>${o.category || 'Objective'}</em>`,
+                { direction: 'top', offset: [0, -8], className: 'player-tooltip player-tooltip-html' }
+            )
+            marker._rr_objective = true
+            group.addLayer(marker)
+
+            // Dashed line from bot's current position to the destination
+            const posData = positions as any
+            if (posData && typeof posData === 'object') {
+                const botPositions = posData[profileId]
+                if (Array.isArray(botPositions) && botPositions.length > 0) {
+                    let closest = botPositions[0]
+                    for (const pos of botPositions) {
+                        if (Number(pos.time) <= timeEndLimit && Number(pos.time) >= Number(closest.time)) {
+                            closest = pos
+                        }
+                    }
+                    if (closest) {
+                        const line = L.polyline(
+                            [[Number(closest.z), Number(closest.x)], [z, x]],
+                            { color: style.color, weight: 1, dashArray: '4 4', opacity: 0.5 }
+                        )
+                        line._rr_objective = true
+                        group.addLayer(line)
+                    }
+                }
+            }
+        }
+
+        group.addTo(MAP)
+        botObjectiveLayerRef.current = group
+
+        return () => {
+            if (botObjectiveLayerRef.current && MAP) {
+                MAP.removeLayer(botObjectiveLayerRef.current)
+                botObjectiveLayerRef.current = null
+            }
+        }
+    }, [MAP, mapIsReady, showBotObjectives, botObjectiveData, timeEndLimit, raidData?.players, raidData?.kills, positions])
+
+    // Phobos / ORBIT advection field: fetch snapshots once from both
+    // sources and merge. Same shape, just two independent tables — drop
+    // the upstream call when upstream support is removed.
+    useEffect(() => {
+        if (phobosFieldData.length > 0) return
+        ;(async () => {
+            const [legacy, v2] = await Promise.all([
+                api.getRaidPhobosField(raidId),
+                api.getRaidOrbitField(raidId),
+            ])
+            const data = [...(legacy || []), ...(v2 || [])]
+            if (data.length > 0) {
+                // advection/convergence/zones come back as JSON strings —
+                // parse them. convergence is empty for ORBIT raids
+                // (the v1-only player-attraction field) and populated
+                // for legacy v1 raids.
+                const parsed = data.map((s: any) => ({
+                    time: Number(s.time),
+                    gridCols: Number(s.gridCols),
+                    gridRows: Number(s.gridRows),
+                    worldMinX: Number(s.worldMinX),
+                    worldMinZ: Number(s.worldMinZ),
+                    cellSize: Number(s.cellSize),
+                    advection: typeof s.advection === 'string' ? JSON.parse(s.advection) : (s.advection || []),
+                    convergence: typeof s.convergence === 'string' ? JSON.parse(s.convergence) : (s.convergence || []),
+                    zones: typeof s.zones === 'string' ? JSON.parse(s.zones) : (s.zones || []),
+                }))
+                setPhobosFieldData(parsed)
+            }
+        })()
+    }, [raidId])
+
+    // Phobos advection field: render overlay (timeline-aware — picks the snapshot for the current time)
+    useEffect(() => {
+        if (!MAP || !mapIsReady) return
+
+        if (phobosFieldLayerRef.current) {
+            MAP.removeLayer(phobosFieldLayerRef.current)
+            phobosFieldLayerRef.current = null
+        }
+
+        if (!showPhobosField || phobosFieldData.length === 0) return
+
+        // Pick the latest snapshot at or before the current timeline position
+        let snap = phobosFieldData[0]
+        for (const s of phobosFieldData) {
+            if (s.time <= timeEndLimit) snap = s
+            else break
+        }
+        if (!snap) return
+
+        const group = L.layerGroup()
+        const { worldMinX, worldMinZ, cellSize } = snap
+
+        // Cell (cx,cy) → world center. Map plots as [z, x].
+        const cellCenter = (cx: number, cy: number): [number, number] => [
+            worldMinZ + (cy + 0.5) * cellSize,
+            worldMinX + (cx + 0.5) * cellSize,
+        ]
+
+        // Draw a force vector as an arrow (shaft + V-shaped head) from a cell center
+        const drawArrow = (cx: number, cy: number, fx: number, fz: number, color: string) => {
+            const mag = Math.sqrt(fx * fx + fz * fz)
+            if (mag < 0.01) return
+            const [cz, cxw] = cellCenter(cx, cy)
+            // Normalized direction (dz = z-axis, dx = x-axis), scaled to ~half a cell
+            const dz = fz / mag, dx = fx / mag
+            const scale = Math.min(mag, 1) * cellSize * 0.45
+            const ez = cz + dz * scale
+            const ex = cxw + dx * scale
+            // Arrowhead barbs: direction rotated ±150°, length ~35% of the arrow
+            const headLen = scale * 0.35
+            const rot = (a: number, b: number, ang: number): [number, number] => [
+                a * Math.cos(ang) - b * Math.sin(ang),
+                a * Math.sin(ang) + b * Math.cos(ang),
+            ]
+            const ang = (150 * Math.PI) / 180
+            const [b1z, b1x] = rot(dz, dx, ang)
+            const [b2z, b2x] = rot(dz, dx, -ang)
+            const shaft = L.polyline([[cz, cxw], [ez, ex]], { color, weight: 1.5, opacity: 0.75 })
+            shaft._rr_phobos = true
+            group.addLayer(shaft)
+            const head = L.polyline(
+                [[ez + b1z * headLen, ex + b1x * headLen], [ez, ex], [ez + b2z * headLen, ex + b2x * headLen]],
+                { color, weight: 1.5, opacity: 0.75 }
+            )
+            head._rr_phobos = true
+            group.addLayer(head)
+        }
+
+        // Advection field (static zones) — amber
+        if (showPhobosAdvection) {
+            for (const c of snap.advection) {
+                drawArrow(c.x, c.y, c.fx, c.fz, '#F59E0B')
+            }
+        }
+        // Convergence field (player attraction) — cyan. Legacy Phobos
+        // v1 only — ORBIT always emits an empty array. Safe to loop
+        // unconditionally; the toggle is hidden from the sidebar when
+        // no snapshot in the raid carries any convergence data.
+        if (showPhobosConvergence) {
+            for (const c of snap.convergence) {
+                drawArrow(c.x, c.y, c.fx, c.fz, '#22D3EE')
+            }
+        }
+
+        // Hot zones — green = attractor (positive force), red = repulsor (negative)
+        if (showPhobosZones)
+        for (const z of snap.zones) {
+            const [cz, cxw] = cellCenter(z.x, z.y)
+            const isAttractor = z.force >= 0
+            const color = isAttractor ? '#22C55E' : '#EF4444'
+            const circle = L.circle([cz, cxw], {
+                radius: z.radius,
+                color,
+                weight: 2,
+                fillColor: color,
+                fillOpacity: 0.08,
+                dashArray: '4 4',
+            })
+            circle.bindTooltip(
+                `${isAttractor ? '🟢 Attractor' : '🔴 Repulsor'}<br/>force: ${z.force.toFixed(2)}, radius: ${z.radius.toFixed(0)}`,
+                { direction: 'top', className: 'player-tooltip player-tooltip-html' }
+            )
+            circle._rr_phobos = true
+            group.addLayer(circle)
+        }
+
+        group.addTo(MAP)
+        phobosFieldLayerRef.current = group
+
+        return () => {
+            if (phobosFieldLayerRef.current && MAP) {
+                MAP.removeLayer(phobosFieldLayerRef.current)
+                phobosFieldLayerRef.current = null
+            }
+        }
+    }, [MAP, mapIsReady, showPhobosField, showPhobosAdvection, showPhobosConvergence, showPhobosZones, phobosFieldData, timeEndLimit])
+
+    // (Phobos POIs / squad-home / squad-main-force debug overlays were
+    // removed — they served their purpose during integration validation
+    // but bloated the DB and cluttered the sidebar without informing the
+    // user-facing playback. The on-map main-objective markers + per-bot
+    // objective tooltip stay; everything else under "Phobos" is gone.)
+
+    // ORBIT main objectives: fetch once per raid. Each DB row is one
+    // 30s snapshot of every squad's main-objective list; we keep them
+    // separate so the viz can replay completion progress over time.
+    useEffect(() => {
+        if (orbitMainObjectivesData.length > 0) return
+        ;(async () => {
+            const data = await api.getRaidOrbitMainObjectives(raidId)
+            if (data && data.length > 0) {
+                const parsed = data.map((row: any) => ({
+                    time: Number(row.time) || 0,
+                    squads: typeof row.squads === 'string' ? JSON.parse(row.squads) : (row.squads || []),
+                }))
+                setOrbitMainObjectivesData(parsed)
+            }
+        })()
+    }, [raidId])
+
+    // Quest name map: fetched once per page load (server side caches it
+    // too — re-fetches are cheap). Independent of the active raid since
+    // the SPT quest db is global.
+    useEffect(() => {
+        if (Object.keys(questNameMap).length > 0) return
+        ;(async () => {
+            const map = await api.getQuestNames()
+            if (map && Object.keys(map).length > 0) setQuestNameMap(map)
+        })()
+    }, [])
+
+    // ORBIT main objectives: render the selected squad's mains as
+    // numbered colour-coded markers + a thin connecting polyline. Only
+    // renders when selectedSquadForMains is set (set by clicking a bot
+    // marker — handled in the player-marker click effect below).
+    useEffect(() => {
+        if (!MAP || !mapIsReady) return
+
+        if (orbitMainObjectivesLayerRef.current) {
+            MAP.removeLayer(orbitMainObjectivesLayerRef.current)
+            orbitMainObjectivesLayerRef.current = null
+        }
+
+        if (selectedSquadForMains == null || orbitMainObjectivesData.length === 0) return
+
+        // Prefer the latest snapshot ≤ timeEndLimit (timeline-accurate
+        // completion flags), fall back to the freshest any-time entry
+        // for disbanded squads so the markers still render.
+        const squadEntry = findLatestSquadEntry(selectedSquadForMains, timeEndLimit)
+        if (!squadEntry || !squadEntry.mainObjectives || squadEntry.mainObjectives.length === 0) return
+
+        const group = L.layerGroup()
+        // Rebuild marker refs alongside the group so the sidebar list
+        // can call openTooltip on a hovered row's marker.
+        orbitMainObjectiveMarkersRef.current = []
+        const colorByType: Record<string, string> = {
+            Kills: '#EF4444',     // red
+            LootValue: '#F59E0B', // gold
+            Quest: '#A855F7',     // purple
+        }
+        // Single-glyph identifier inside each marker — no number,
+        // because the squad picks mains opportunistically (closest
+        // pending). A number would imply an execution order that
+        // doesn't exist.
+        const glyphByType: Record<string, string> = {
+            Kills: 'K',
+            LootValue: '$',
+            Quest: '?',
+        }
+
+        squadEntry.mainObjectives.forEach((m: any) => {
+            const baseColor = colorByType[m.type] || '#888'
+            // Four visual states: completed (grey), interrupted
+            // (amber halo — LootValue paused by combat or out-of-cell),
+            // in progress (white halo + thicker), pending (regular).
+            // Quest has no started/interrupted state — it transitions
+            // straight from pending to completed at trigger touch.
+            const isStarted = !m.completed && (
+                (m.type === 'Kills' && m.killsRoamStartedAt > 0) ||
+                (m.type === 'LootValue' && m.lootValueEnteredAt > 0)
+            )
+            const isInterrupted = isStarted && m.type === 'LootValue' && m.lootValueInterrupted === true
+            const fillColor = m.completed ? '#6B7280' : baseColor
+            const ringColor = m.completed
+                ? '#4B5563'
+                : isInterrupted ? '#F59E0B'        // amber — interrupted
+                : isStarted ? '#FFFFFF'             // white — in progress
+                : baseColor                          // pending
+            const ringWeight = isStarted ? 4 : 2.5
+            const glyph = m.completed ? '✓' : (glyphByType[m.type] || '●')
+            const marker = L.circleMarker([m.z, m.x], {
+                radius: isStarted ? 13 : 11,
+                color: ringColor,
+                weight: ringWeight,
+                fillColor: fillColor,
+                fillOpacity: 0.85,
+                dashArray: isInterrupted ? '6 4' : undefined,
+            })
+            const labelIcon = L.divIcon({
+                className: 'rr-main-objective-label',
+                html: `<div style="color:#fff;font-size:11px;font-weight:bold;text-shadow:0 0 3px rgba(0,0,0,0.9);text-align:center;line-height:22px;width:22px;">${glyph}</div>`,
+                iconSize: [22, 22],
+                iconAnchor: [11, 11],
+            })
+            const label = L.marker([m.z, m.x], { icon: labelIcon, interactive: false })
+            let tipHtml = `<strong>${m.type}</strong>`
+            if (m.type === 'Quest') {
+                const friendly = resolveQuestName(m.questTriggerId || m.questTitle, questNameMap)
+                tipHtml += `<br/><span style="opacity:0.85">${friendly || m.questTitle || m.questTriggerId || ''}</span>`
+            }
+            if (m.type === 'Kills' && m.killsRoamTargetDuration > 0) {
+                tipHtml += `<br/><span style="opacity:0.7;font-size:10px">Roam ${m.killsRoamTargetDuration.toFixed(0)}s</span>`
+            }
+            if (m.type === 'LootValue' && m.lootValueTotal > 0) {
+                tipHtml += `<br/><span style="opacity:0.7;font-size:10px">₽ ${Math.round(m.lootValueTotal).toLocaleString()}</span>`
+            }
+            const stateLabel = m.completed
+                ? '✓ completed'
+                : isInterrupted ? '⏸ interrupted (combat or out of cell)'
+                : isStarted ? '◉ in progress (started)'
+                : 'pending'
+            tipHtml += `<br/><span style="opacity:0.7;font-size:10px">${stateLabel}</span>`
+            marker.bindTooltip(tipHtml, { direction: 'top', className: 'player-tooltip player-tooltip-html' })
+            group.addLayer(marker)
+            group.addLayer(label)
+            orbitMainObjectiveMarkersRef.current.push(marker)
+        })
+
+        group.addTo(MAP)
+        orbitMainObjectivesLayerRef.current = group
+
+        return () => {
+            if (orbitMainObjectivesLayerRef.current && MAP) {
+                MAP.removeLayer(orbitMainObjectivesLayerRef.current)
+                orbitMainObjectivesLayerRef.current = null
+            }
+        }
+    }, [MAP, mapIsReady, selectedSquadForMains, orbitMainObjectivesData, timeEndLimit, questNameMap])
+
+    // Loot float animations: show floating text when timeline crosses a loot event
+    // Uses a ref-based approach to avoid useEffect cleanup killing the animation on re-render
+    const lootFloatTimersRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+    // Track active float count per approximate position to stack them
+    const lootFloatStackRef = useRef<Record<string, number>>({})
+
+    useEffect(() => {
+        if (!MAP || !mapIsReady || !showLootFloats) {
+            prevTimeEndLimitRef.current = timeEndLimit
+            return
+        }
+
+        const prevTime = prevTimeEndLimitRef.current
+        prevTimeEndLimitRef.current = timeEndLimit
+
+        // Only show floats when timeline moves forward (not scrubbing backward)
+        if (timeEndLimit <= prevTime) return
+
+        if (!raidData?.looting) return
+
+        // Find loot events in the time window that just passed
+        const newLoots = raidData.looting.filter(l => {
+            const t = Number(l.time)
+            const added = l.added === 'True' || l.added === 'true' || l.added === '1'
+            return added && t > prevTime && t <= timeEndLimit && l.x && l.z
+        })
+
+        if (newLoots.length === 0) return
+
+        // Each loot event gets its own independent layer + timer
+        // Stagger vertically based on how many floats are already active at this position
+        for (let li = 0; li < newLoots.length; li++) {
+            const loot = newLoots[li]
+            const price = (loot.price || 0) * Number(loot.qty || 1)
+            const priceStr = price > 0 ? ` \u20BD${price.toLocaleString()}` : ''
+            const color = getLootPriceColor(price)
+
+            // Round position to group nearby floats together
+            const posKey = `${Math.round(Number(loot.z))},${Math.round(Number(loot.x))}`
+            const stackIndex = lootFloatStackRef.current[posKey] || 0
+            lootFloatStackRef.current[posKey] = stackIndex + 1
+            const yOffset = stackIndex * 18
+
+            const icon = L.divIcon({
+                className: '',
+                html: `<div class="loot-float-label" style="color:${color}">+${loot.itemName || loot.name}${priceStr}</div>`,
+                iconSize: [200, 20],
+                iconAnchor: [100, 20 + yOffset],
+            })
+            const marker = L.marker([Number(loot.z), Number(loot.x)], { icon, interactive: false, zIndexOffset: 2000 + stackIndex })
+            marker.addTo(MAP)
+
+            // Self-cleaning timer — decrement stack count when animation ends
+            const timer = setTimeout(() => {
+                if (MAP) MAP.removeLayer(marker)
+                lootFloatTimersRef.current.delete(timer)
+                if (lootFloatStackRef.current[posKey] > 0) lootFloatStackRef.current[posKey]--
+            }, 5200)
+            lootFloatTimersRef.current.add(timer)
+        }
+    }, [MAP, mapIsReady, showLootFloats, timeEndLimit, raidData?.looting])
+
+    // Hit flash animations: show a red flash when a bot/player gets hit
+    useEffect(() => {
+        if (!MAP || !mapIsReady || !showHitFlash) {
+            prevTimeHitRef.current = timeEndLimit
+            return
+        }
+
+        const prevTime = prevTimeHitRef.current
+        prevTimeHitRef.current = timeEndLimit
+
+        if (timeEndLimit <= prevTime) return
+        if (!raidData?.ballistic) return
+
+        const newHits = raidData.ballistic.filter(b => {
+            const t = Number(b.time)
+            return b.hitPlayerId && t > prevTime && t <= timeEndLimit
+        })
+
+        if (newHits.length === 0) return
+
+        for (const hit of newHits) {
+            try {
+                const target = JSON.parse(hit.target)
+                const icon = L.divIcon({
+                    className: '',
+                    html: `<div class="hit-flash-marker"></div>`,
+                    iconSize: [10, 10],
+                    iconAnchor: [5, 5],
+                })
+                const marker = L.marker([target.z, target.x], { icon, interactive: false, zIndexOffset: 3000 })
+                marker.addTo(MAP)
+
+                const timer = setTimeout(() => {
+                    if (MAP) MAP.removeLayer(marker)
+                    hitFlashTimersRef.current.delete(timer)
+                }, 900)
+                hitFlashTimersRef.current.add(timer)
+            } catch {}
+        }
+    }, [MAP, mapIsReady, showHitFlash, timeEndLimit, raidData?.ballistic])
 
     // Compute filtered loot stats (timeline-aware)
     const looseLootStats = useMemo(() => {
@@ -1553,6 +2525,9 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         for (const key in m._layers) {
             const layer = m._layers[key];
         
+            // Skip layers managed by other overlays (quests, loose loot, grenades, etc.)
+            if (layer._rr_quest || layer._rr_looseLoot || layer._rr_grenade || layer._rr_objective || layer._rr_phobos) continue;
+
             // Remove polylines without eventType or not being ballisticsLine, circles, and special bot markers
             const isSpecialBotMarker = layer instanceof L.Marker && layer.options?.icon?.options?.className === 'special-bot-marker';
             const isFollowKillMarker = layer instanceof L.Marker && layer.options?.icon?.options?.className?.includes('follow-kill-marker');
@@ -1610,14 +2585,19 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             let brainOutput = 'Unknown'
             let botMapping = BotMapping[player.type]
             if (player.name === 'Knight') {
-                botMapping = {
-                    type: 'GOON',
+                botMapping = { type: 'GOON' }
+            }
+            if (!botMapping && typeof player.type === 'string' && player.type.includes('|')) {
+                const category = player.type.split('|')[1]
+                const name = player.type.split('|')[0].toLowerCase()
+                if (category === 'FACTION_MOD') {
+                    botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' }
+                } else {
+                    botMapping = { type: category }
                 }
             }
             if (!botMapping) {
-                botMapping = {
-                    type: 'UNKNOWN',
-                }
+                botMapping = { type: 'UNKNOWN' }
             }
 
             if ((player.team === 'Bear' || player.team === 'Usec') && player.mod_SAIN_brain != 'UNKNOWN') {
@@ -1652,6 +2632,11 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         if (player) {
             let difficulty = player.mod_SAIN_difficulty
             let brain = getPlayerBrain(player)
+            // For faction-mod bots, show only their specific role (Rifleman, Grenadier, etc.)
+            if (classifyPlayer(player) === 'FACTION') {
+                const role = getFactionRole(player)
+                if (role) return role
+            }
             if (difficulty !== null && difficulty !== '') {
                 return `${difficulty} - ${brain}`
             }
@@ -1789,7 +2774,12 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                     const FACTION_LABELS: Record<string, string> = { MERCENARY: 'Mercenary', RUAF: 'RUAF', UNTAR: 'UNTAR', BLACKDIV: 'Black Div' }
                                     const factions: Record<string, { player: any, originalIndex: number }[]> = {}
                                     items.forEach(item => {
-                                        const fType = BotMapping[item.player.type]?.type || 'UNKNOWN'
+                                        let fType = BotMapping[item.player.type]?.type
+                                        // Fallback for bots not in botMapping.json — use the category after "|"
+                                        if (!fType && typeof item.player.type === 'string' && item.player.type.includes('|')) {
+                                            fType = item.player.type.split('|')[1]
+                                        }
+                                        fType = fType || 'UNKNOWN'
                                         if (!factions[fType]) factions[fType] = []
                                         factions[fType].push(item)
                                     })
@@ -1964,6 +2954,40 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 </div>
                 <aside className="sidebar-right border border-eft ml-3 p-3 overflow-x-auto">
                     <div className="playerfeed text-eft">
+                        {/* ── Animations Section ── */}
+                        <div>
+                            <div
+                                className="flex items-center cursor-pointer"
+                                style={{ fontSize: '14px' }}
+                                onClick={() => setAnimationsCollapsed(!animationsCollapsed)}
+                            >
+                                <span style={{ marginRight: '4px', fontSize: '9px' }}>{animationsCollapsed ? '\u25B6' : '\u25BC'}</span>
+                                <strong>Animations</strong>
+                            </div>
+                            {!animationsCollapsed && (
+                                <div style={{ marginTop: '6px', fontSize: '13px' }}>
+                                    <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '6px' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={showLootFloats}
+                                            onChange={() => setShowLootFloats(!showLootFloats)}
+                                            style={{ accentColor: '#9a8866' }}
+                                        />
+                                        <span>Loot pickups</span>
+                                    </label>
+                                    <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '6px' }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={showHitFlash}
+                                            onChange={() => setShowHitFlash(!showHitFlash)}
+                                            style={{ accentColor: '#9a8866' }}
+                                        />
+                                        <span>Hit impacts</span>
+                                    </label>
+                                </div>
+                            )}
+                        </div>
+
                         {/* ── Loose Loot Section ── */}
                         <div>
                             <div
@@ -1985,7 +3009,6 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                         />
                                         <span>Show on map</span>
                                     </label>
-
                                     <div style={{ marginBottom: '6px' }}>
                                         <div className="flex justify-between" style={{ fontSize: '12px', marginBottom: '2px' }}>
                                             <span>Min price</span>
@@ -2060,6 +3083,326 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                 </div>
                             )}
                         </div>
+
+                        {/* ── Bot Quests Section (QuestingBots) ── */}
+                        {botQuestData.length > 0 && (
+                            <div className="mt-4" style={{ borderTop: '1px solid rgba(154, 136, 102, 0.3)', paddingTop: '8px' }}>
+                                <div
+                                    className="flex items-center cursor-pointer"
+                                    style={{ fontSize: '14px' }}
+                                    onClick={() => setBotQuestCollapsed(!botQuestCollapsed)}
+                                >
+                                    <span style={{ marginRight: '4px', fontSize: '9px' }}>{botQuestCollapsed ? '\u25B6' : '\u25BC'}</span>
+                                    <strong>Bot Quests</strong>
+                                </div>
+                                {!botQuestCollapsed && (
+                                    <div style={{ marginTop: '6px', fontSize: '13px' }}>
+                                        <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '6px' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={showBotQuests}
+                                                onChange={() => setShowBotQuests(!showBotQuests)}
+                                                style={{ accentColor: '#9a8866' }}
+                                            />
+                                            <span>Show on map</span>
+                                        </label>
+                                        <div style={{ fontSize: '11px', opacity: 0.7, marginBottom: '4px' }}>
+                                            {botQuestData.length} quest events recorded
+                                        </div>
+                                        <div style={{ fontSize: '11px', marginBottom: '4px' }}>
+                                            <span style={{ color: '#FBCFE8', marginRight: '8px' }}>{'\u25CF'} EFT Quest</span>
+                                            <span style={{ color: '#D946EF' }}>{'\u25CF'} QB Quest</span>
+                                        </div>
+                                        <div style={{ maxHeight: '250px', overflowY: 'auto', borderTop: '1px solid rgba(154,136,102,0.2)', paddingTop: '4px' }}>
+                                            {(() => {
+                                                // Show latest quest per bot at current timeline
+                                                const latestByBot: Record<string, any> = {}
+                                                for (const q of botQuestData) {
+                                                    if (Number(q.time) > timeEndLimit) continue
+                                                    const prev = latestByBot[q.profileId]
+                                                    if (!prev || Number(q.time) > Number(prev.time)) latestByBot[q.profileId] = q
+                                                }
+                                                // Build dead bot set at current time
+                                                const deadOrGone = new Set<string>()
+                                                if (raidData?.kills) {
+                                                    for (const k of raidData.kills) {
+                                                        if (Number(k.time) <= timeEndLimit) deadOrGone.add(k.killedId)
+                                                    }
+                                                }
+                                                return Object.entries(latestByBot)
+                                                    .filter(([profileId, q]) => q.status !== 'Completed' && q.status !== 'Archived' && q.status !== 'Failed' && !deadOrGone.has(profileId))
+                                                    .map(([profileId, q]) => {
+                                                        const player = raidData?.players?.find(p => p.profileId === profileId)
+                                                        const botName = player?.name || profileId.slice(0, 8)
+                                                        const isEFT = q.isEFTQuest === 1 || q.isEFTQuest === true
+                                                        return (
+                                                            <div key={profileId} style={{ padding: '2px 0', borderBottom: '1px solid rgba(154,136,102,0.1)' }}>
+                                                                <div style={{ fontSize: '12px' }}>
+                                                                    <strong>{botName}</strong>
+                                                                    <span style={{ color: isEFT ? '#FBCFE8' : '#D946EF', marginLeft: '4px', fontSize: '10px' }}>
+                                                                        {isEFT ? 'EFT' : 'QB'}
+                                                                    </span>
+                                                                </div>
+                                                                <div style={{ fontSize: '11px', opacity: 0.7 }}>
+                                                                    {q.questName} — {q.actionType}
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    })
+                                            })()}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* ── Bot Objectives Section (Phobos) ── */}
+                        {botObjectiveData.length > 0 && (
+                            <div className="mt-4" style={{ borderTop: '1px solid rgba(154, 136, 102, 0.3)', paddingTop: '8px' }}>
+                                <div
+                                    className="flex items-center cursor-pointer"
+                                    style={{ fontSize: '14px' }}
+                                    onClick={() => setBotObjectiveCollapsed(!botObjectiveCollapsed)}
+                                >
+                                    <span style={{ marginRight: '4px', fontSize: '9px' }}>{botObjectiveCollapsed ? '▶' : '▼'}</span>
+                                    <strong>Bot Objectives</strong>
+                                </div>
+                                {!botObjectiveCollapsed && (
+                                    <div style={{ marginTop: '6px', fontSize: '13px' }}>
+                                        <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '6px' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={showBotObjectives}
+                                                onChange={() => setShowBotObjectives(!showBotObjectives)}
+                                                style={{ accentColor: '#9a8866' }}
+                                            />
+                                            <span>Show on map</span>
+                                        </label>
+                                        <div style={{ fontSize: '11px', opacity: 0.7, marginBottom: '4px' }}>
+                                            {botObjectiveData.length} objective events recorded (Phobos)
+                                        </div>
+                                        <div style={{ fontSize: '11px', marginBottom: '4px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                            <span style={{ color: '#FACC15' }}>{'●'} Container</span>
+                                            <span style={{ color: '#FBBF24' }}>{'●'} Loose Loot</span>
+                                            <span style={{ color: '#D946EF' }}>{'●'} Quest</span>
+                                            <span style={{ color: '#38BDF8' }}>{'●'} Synthetic</span>
+                                            <span style={{ color: '#2DD4BF' }}>{'●'} Exfil</span>
+                                        </div>
+                                        <div style={{ maxHeight: '250px', overflowY: 'auto', borderTop: '1px solid rgba(154,136,102,0.2)', paddingTop: '4px' }}>
+                                            {(() => {
+                                                const latestByBot: Record<string, any> = {}
+                                                for (const o of botObjectiveData) {
+                                                    if (Number(o.time) > timeEndLimit) continue
+                                                    const prev = latestByBot[o.profileId]
+                                                    if (!prev || Number(o.time) > Number(prev.time)) latestByBot[o.profileId] = o
+                                                }
+                                                const deadOrGone = new Set<string>()
+                                                if (raidData?.kills) {
+                                                    for (const k of raidData.kills) {
+                                                        if (Number(k.time) <= timeEndLimit) deadOrGone.add(k.killedId)
+                                                    }
+                                                }
+                                                const catColor: Record<string, string> = {
+                                                    'ContainerLoot': '#FACC15', 'LooseLoot': '#FBBF24',
+                                                    'Quest': '#D946EF', 'Synthetic': '#38BDF8', 'Exfil': '#2DD4BF',
+                                                }
+                                                return Object.entries(latestByBot)
+                                                    .filter(([profileId, o]) => o.status === 'Moving' && !deadOrGone.has(profileId))
+                                                    .map(([profileId, o]) => {
+                                                        const player = raidData?.players?.find(p => p.profileId === profileId)
+                                                        const botName = player?.name || profileId.slice(0, 8)
+                                                        const isLeader = o.isLeader === 1 || o.isLeader === true
+                                                        return (
+                                                            <div key={profileId} style={{ padding: '2px 0', borderBottom: '1px solid rgba(154,136,102,0.1)' }}>
+                                                                <div style={{ fontSize: '12px' }}>
+                                                                    <strong>{botName}</strong>{isLeader ? ' ★' : ''}
+                                                                    <span style={{ color: catColor[o.category] || '#94A3B8', marginLeft: '4px', fontSize: '10px' }}>
+                                                                        {o.category || 'Objective'}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    })
+                                            })()}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* ── Phobos Advection Field Section ── */}
+                        {phobosFieldData.length > 0 && (
+                            <div className="mt-4" style={{ borderTop: '1px solid rgba(154, 136, 102, 0.3)', paddingTop: '8px' }}>
+                                <div
+                                    className="flex items-center cursor-pointer"
+                                    style={{ fontSize: '14px' }}
+                                    onClick={() => setPhobosFieldCollapsed(!phobosFieldCollapsed)}
+                                >
+                                    <span style={{ marginRight: '4px', fontSize: '9px' }}>{phobosFieldCollapsed ? '▶' : '▼'}</span>
+                                    <strong>Phobos Field</strong>
+                                </div>
+                                {!phobosFieldCollapsed && (
+                                    <div style={{ marginTop: '6px', fontSize: '13px' }}>
+                                        <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '6px' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={showPhobosField}
+                                                onChange={() => setShowPhobosField(!showPhobosField)}
+                                                style={{ accentColor: '#9a8866' }}
+                                            />
+                                            <span>Show on map</span>
+                                        </label>
+                                        <div style={{ fontSize: '11px', opacity: 0.7, marginBottom: '4px' }}>
+                                            {phobosFieldData.length} field snapshots recorded
+                                        </div>
+                                        <div style={{ marginLeft: '4px', opacity: showPhobosField ? 1 : 0.4, pointerEvents: showPhobosField ? 'auto' : 'none' }}>
+                                            <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '4px', fontSize: '12px' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={showPhobosAdvection}
+                                                    onChange={() => setShowPhobosAdvection(!showPhobosAdvection)}
+                                                    style={{ accentColor: '#F59E0B' }}
+                                                />
+                                                <span style={{ color: '#F59E0B' }}>{'➜'} Advection (zones)</span>
+                                            </label>
+                                            {/* Convergence toggle is hidden for ORBIT raids (always-empty convergence). Surface only when a v1 snapshot carries data. */}
+                                            {phobosFieldData.some((s: any) => Array.isArray(s.convergence) && s.convergence.length > 0) && (
+                                                <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '4px', fontSize: '12px' }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={showPhobosConvergence}
+                                                        onChange={() => setShowPhobosConvergence(!showPhobosConvergence)}
+                                                        style={{ accentColor: '#22D3EE' }}
+                                                    />
+                                                    <span style={{ color: '#22D3EE' }}>{'➜'} Convergence (players)</span>
+                                                </label>
+                                            )}
+                                            <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '4px', fontSize: '12px' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={showPhobosZones}
+                                                    onChange={() => setShowPhobosZones(!showPhobosZones)}
+                                                    style={{ accentColor: '#9a8866' }}
+                                                />
+                                                <span><span style={{ color: '#22C55E' }}>{'◯'}</span>/<span style={{ color: '#EF4444' }}>{'◯'}</span> Zones (attractor/repulsor)</span>
+                                            </label>
+                                        </div>
+                                        <div style={{ fontSize: '10px', opacity: 0.6, marginTop: '4px' }}>
+                                            Field shown is the snapshot closest to the current timeline position.
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* ── ORBIT Main Objectives (click bot to view) ── */}
+                        {orbitMainObjectivesData.length > 0 && (
+                            <div className="mt-4" style={{ borderTop: '1px solid rgba(154, 136, 102, 0.3)', paddingTop: '8px' }}>
+                                <div style={{ fontSize: '14px', marginBottom: '6px' }}>
+                                    <strong>ORBIT Main Objectives</strong>
+                                    {selectedSquadForMains != null && (() => {
+                                        // Resolve the selected squad's leader (assumed first
+                                        // member in memberProfileIds — that's how
+                                        // ORBIT.cs serialises Squad.Members and the
+                                        // leader is the first agent added). Render their
+                                        // colour dot + nickname instead of an opaque
+                                        // squad number.
+                                        const sq = findLatestSquadEntry(selectedSquadForMains, timeEndLimit)
+                                        const leaderPid = sq?.memberProfileIds?.[0]
+                                        const leaderIdx = leaderPid ? raidData.players.findIndex((p: any) => p.profileId === leaderPid) : -1
+                                        const leaderPlayer = leaderIdx >= 0 ? raidData.players[leaderIdx] : null
+                                        const leaderColor = leaderPlayer
+                                            ? (calculatedPlayerInfo[leaderPid!]?.pickedColor || getPlayerColor(leaderPlayer, leaderIdx))
+                                            : '#999'
+                                        const leaderName = leaderPlayer?.name || `Squad #${selectedSquadForMains}`
+                                        return (
+                                            <span style={{ marginLeft: '8px', fontSize: '12px', opacity: 0.9 }}>
+                                                <span style={{ color: leaderColor, fontSize: '14px', verticalAlign: 'middle' }}>●</span>{' '}
+                                                <span style={{ verticalAlign: 'middle' }}>{leaderName}</span>{' '}
+                                                <button
+                                                    onClick={() => setSelectedSquadForMains(null)}
+                                                    style={{ marginLeft: '4px', fontSize: '10px', padding: '1px 4px', background: 'rgba(154,136,102,0.3)', border: 'none', cursor: 'pointer' }}
+                                                >hide</button>
+                                            </span>
+                                        )
+                                    })()}
+                                </div>
+                                <div style={{ fontSize: '11px', opacity: 0.7, marginBottom: '4px' }}>
+                                    {selectedSquadForMains == null
+                                        ? 'Click any bot dot on the map to show their squad\'s main objectives sequence.'
+                                        : 'Click another bot to switch squad, click the same bot again to hide.'}
+                                </div>
+                                <div style={{ fontSize: '11px', marginBottom: '4px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                    <span style={{ color: '#EF4444' }}>{'●'} Kills</span>
+                                    <span style={{ color: '#F59E0B' }}>{'●'} LootValue</span>
+                                    <span style={{ color: '#A855F7' }}>{'●'} Quest</span>
+                                    <span style={{ color: '#6B7280' }}>{'●'} Completed</span>
+                                </div>
+                                {/* Per-squad mains list — only when a squad is selected. Each
+                                    row shows the type + per-type detail (quest name, loot
+                                    value in roubles, Kills roam-target duration). */}
+                                {selectedSquadForMains != null && (() => {
+                                    const sq = findLatestSquadEntry(selectedSquadForMains, timeEndLimit)
+                                    if (!sq || !sq.mainObjectives) return null
+                                    const colorByType: Record<string, string> = { Kills: '#EF4444', LootValue: '#F59E0B', Quest: '#A855F7' }
+                                    return (
+                                        <div style={{ marginTop: '6px', borderTop: '1px dashed rgba(154,136,102,0.3)', paddingTop: '6px' }}>
+                                            {sq.mainObjectives.map((m: any, idx: number) => {
+                                                const baseColor = colorByType[m.type] || '#888'
+                                                const isStarted = !m.completed && (
+                                                    (m.type === 'Kills' && m.killsRoamStartedAt > 0) ||
+                                                    (m.type === 'LootValue' && m.lootValueEnteredAt > 0)
+                                                )
+                                                const isInterrupted = isStarted && m.type === 'LootValue' && m.lootValueInterrupted === true
+                                                const stateGlyph = m.completed ? '✓' : (isInterrupted ? '⏸' : (isStarted ? '◉' : '○'))
+                                                const stateColor = m.completed ? '#6B7280' : (isInterrupted ? '#F59E0B' : (isStarted ? '#fff' : baseColor))
+                                                let detail = ''
+                                                if (m.type === 'Quest') {
+                                                    const friendly = resolveQuestName(m.questTriggerId || m.questTitle, questNameMap)
+                                                    detail = friendly || m.questTitle || m.questTriggerId || '(no title)'
+                                                } else if (m.type === 'LootValue') {
+                                                    detail = m.lootValueTotal > 0
+                                                        ? `₽ ${Math.round(m.lootValueTotal).toLocaleString()}`
+                                                        : '(no value)'
+                                                } else if (m.type === 'Kills') {
+                                                    detail = `${Math.round(m.killsRoamTargetDuration || 0)}s in zone`
+                                                }
+                                                return (
+                                                    <div
+                                                        key={idx}
+                                                        style={{
+                                                            display: 'flex', alignItems: 'center', gap: '6px',
+                                                            padding: '2px 4px', fontSize: '11px',
+                                                            opacity: m.completed ? 0.5 : 1,
+                                                            textDecoration: m.completed ? 'line-through' : 'none',
+                                                            cursor: 'pointer',
+                                                            borderRadius: '2px',
+                                                        }}
+                                                        onMouseEnter={(ev) => {
+                                                            // Highlight the matching marker on the
+                                                            // map: open its tooltip so the user
+                                                            // can see exactly where the main is.
+                                                            const marker = orbitMainObjectiveMarkersRef.current[idx]
+                                                            marker?.openTooltip()
+                                                            ;(ev.currentTarget as HTMLDivElement).style.background = 'rgba(154,136,102,0.18)'
+                                                        }}
+                                                        onMouseLeave={(ev) => {
+                                                            const marker = orbitMainObjectiveMarkersRef.current[idx]
+                                                            marker?.closeTooltip()
+                                                            ;(ev.currentTarget as HTMLDivElement).style.background = 'transparent'
+                                                        }}
+                                                    >
+                                                        <span style={{ color: stateColor, fontWeight: 'bold' }}>{stateGlyph}</span>
+                                                        <span style={{ color: baseColor, minWidth: '64px' }}>{m.type}</span>
+                                                        <span style={{ opacity: 0.85 }}>{detail}</span>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    )
+                                })()}
+                            </div>
+                        )}
 
                         {/* ── Bot Inventory Section ── */}
                         {botsWithInventory.length > 0 && (

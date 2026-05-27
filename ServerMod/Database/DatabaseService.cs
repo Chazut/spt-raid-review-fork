@@ -322,6 +322,102 @@ public class DatabaseService : IDisposable
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_loose_loot_raid_item ON loose_loot(""raidId"", ""itemId"");
             "),
+            ("add_bot_quest_table", @"
+                CREATE TABLE IF NOT EXISTS bot_quest (
+                    ""id"" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ""raidId"" TEXT NOT NULL,
+                    ""profileId"" TEXT NOT NULL,
+                    ""time"" INTEGER NOT NULL,
+                    ""questName"" TEXT NOT NULL,
+                    ""isEFTQuest"" INTEGER DEFAULT 0,
+                    ""actionType"" TEXT NOT NULL DEFAULT '',
+                    ""status"" TEXT NOT NULL DEFAULT '',
+                    ""objectiveX"" REAL DEFAULT 0,
+                    ""objectiveY"" REAL DEFAULT 0,
+                    ""objectiveZ"" REAL DEFAULT 0,
+                    ""created_at"" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (""raidId"") REFERENCES raid(""raidId"")
+                );
+            "),
+            ("add_bot_objective_table", @"
+                CREATE TABLE IF NOT EXISTS bot_objective (
+                    ""id"" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ""raidId"" TEXT NOT NULL,
+                    ""profileId"" TEXT NOT NULL,
+                    ""time"" INTEGER NOT NULL,
+                    ""status"" TEXT NOT NULL DEFAULT '',
+                    ""category"" TEXT NOT NULL DEFAULT '',
+                    ""isLeader"" INTEGER DEFAULT 0,
+                    ""objectiveX"" REAL DEFAULT 0,
+                    ""objectiveY"" REAL DEFAULT 0,
+                    ""objectiveZ"" REAL DEFAULT 0,
+                    ""created_at"" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (""raidId"") REFERENCES raid(""raidId"")
+                );
+            "),
+            ("add_phobos_field_table", @"
+                CREATE TABLE IF NOT EXISTS phobos_field (
+                    ""id"" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ""raidId"" TEXT NOT NULL,
+                    ""time"" INTEGER NOT NULL,
+                    ""gridCols"" INTEGER DEFAULT 0,
+                    ""gridRows"" INTEGER DEFAULT 0,
+                    ""worldMinX"" REAL DEFAULT 0,
+                    ""worldMinZ"" REAL DEFAULT 0,
+                    ""cellSize"" REAL DEFAULT 0,
+                    ""advection"" TEXT NOT NULL DEFAULT '[]',
+                    ""convergence"" TEXT NOT NULL DEFAULT '[]',
+                    ""zones"" TEXT NOT NULL DEFAULT '[]',
+                    ""created_at"" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (""raidId"") REFERENCES raid(""raidId"")
+                );
+            "),
+            // ORBIT tables — the supported AI integration. Each receives
+            // periodic snapshots from the client integration class.
+            ("add_orbit_field_table", @"
+                CREATE TABLE IF NOT EXISTS orbit_field (
+                    ""id"" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ""raidId"" TEXT NOT NULL,
+                    ""time"" INTEGER NOT NULL,
+                    ""gridCols"" INTEGER DEFAULT 0,
+                    ""gridRows"" INTEGER DEFAULT 0,
+                    ""worldMinX"" REAL DEFAULT 0,
+                    ""worldMinZ"" REAL DEFAULT 0,
+                    ""cellSize"" REAL DEFAULT 0,
+                    ""advection"" TEXT NOT NULL DEFAULT '[]',
+                    ""convergence"" TEXT NOT NULL DEFAULT '[]',
+                    ""zones"" TEXT NOT NULL DEFAULT '[]',
+                    ""created_at"" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (""raidId"") REFERENCES raid(""raidId"")
+                );
+            "),
+            ("add_orbit_bot_objective_table", @"
+                CREATE TABLE IF NOT EXISTS orbit_bot_objective (
+                    ""id"" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ""raidId"" TEXT NOT NULL,
+                    ""profileId"" TEXT NOT NULL,
+                    ""time"" INTEGER NOT NULL,
+                    ""status"" TEXT NOT NULL DEFAULT '',
+                    ""category"" TEXT NOT NULL DEFAULT '',
+                    ""isLeader"" INTEGER NOT NULL DEFAULT 0,
+                    ""objectiveX"" REAL DEFAULT 0,
+                    ""objectiveY"" REAL DEFAULT 0,
+                    ""objectiveZ"" REAL DEFAULT 0,
+                    ""extractReason"" TEXT NOT NULL DEFAULT '',
+                    ""created_at"" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (""raidId"") REFERENCES raid(""raidId"")
+                );
+            "),
+            ("add_orbit_main_objectives_table", @"
+                CREATE TABLE IF NOT EXISTS orbit_main_objectives (
+                    ""id"" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ""raidId"" TEXT NOT NULL,
+                    ""time"" INTEGER NOT NULL,
+                    ""squads"" TEXT NOT NULL DEFAULT '[]',
+                    ""created_at"" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (""raidId"") REFERENCES raid(""raidId"")
+                );
+            "),
         };
 
         foreach (var (name, sql) in migrations)

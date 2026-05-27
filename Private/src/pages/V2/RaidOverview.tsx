@@ -10,6 +10,7 @@ import BotMapping from '../../assets/botMapping.json'
 import { useEffect, useState } from "react";
 import _ from "lodash";
 import { LOCATIONS } from "../../helpers/locations";
+import { getFactionRole } from "../../helpers/players";
 import cyr_to_en from '../../assets/cyr_to_en.json';
 
 const BOSS_NAME_OVERRIDES: Record<string, string> = {
@@ -293,14 +294,19 @@ export default function RaidOverview() {
           // @ts-ignore
           let botMapping = BotMapping[player.type];
           if (player.name === "Knight") {
-            botMapping = {
-              type: 'GOON'
-            };
+            botMapping = { type: 'GOON' };
+          }
+          if (!botMapping && typeof player.type === 'string' && player.type.includes('|')) {
+            const category = player.type.split('|')[1];
+            const name = player.type.split('|')[0].toLowerCase();
+            if (category === 'FACTION_MOD') {
+              botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' };
+            } else {
+              botMapping = { type: category };
+            }
           }
           if (!botMapping) {
-              botMapping = {
-                  type: 'UNKNOWN'
-              };
+              botMapping = { type: 'UNKNOWN' };
           }
 
           switch (botMapping.type){
@@ -351,6 +357,13 @@ export default function RaidOverview() {
           let difficulty = player.mod_SAIN_difficulty;
           let brain = getPlayerBrain(player);
 
+          // Faction-mod bots: show only their specific role (Rifleman, Grenadier, etc.)
+          const category = typeof player.type === "string" && player.type.includes("|") ? player.type.split("|")[1] : "";
+          if (["RUAF", "UNTAR", "BLACKDIV", "MERCENARY"].includes(category)) {
+            const role = getFactionRole(player);
+            if (role) return role;
+          }
+
           if (difficulty !== null && difficulty !== "") {
             if(player.team === "Savage" && brain === "") {
               return difficulty;
@@ -397,12 +410,56 @@ export default function RaidOverview() {
           ? raid.kills?.find(k => k.killedId === selectedProfileId)?.profileId
           : null;
 
+        // Precompute extract inference for bots. Three signals can each
+        // mean "this bot extracted":
+        //   1. Last status sample is 'Unspawned' (bot was despawned with
+        //      no killer — ORBIT's ExtractAction or SWAG/Donuts).
+        //   2. Last status sample is 'Unknown' (BotChecker fell into the
+        //      player == null branch — the Player object was removed
+        //      from the gameWorld lookup, which happens post-despawn).
+        //   3. Last sample stopped > 2 s before raidEnd AND no Dead entry
+        //      (legacy fallback for despawns that don't leave any status
+        //      record at all).
+        // The main player uses raid.exitStatus directly (authoritative) —
+        // BotChecker doesn't write Dead for the local human player so
+        // we'd otherwise show them as Alive even when they're KIA.
+        const lastSampleByProfile = new Map<string, number>();
+        const lastStatusByProfile = new Map<string, string>();
+        let raidEndTime = 0;
+        for (const ps of (raid.player_status || [])) {
+          const t = Number(ps.time);
+          if (!Number.isFinite(t)) continue;
+          if (t > raidEndTime) raidEndTime = t;
+          const prev = lastSampleByProfile.get(ps.profileId) ?? -1;
+          if (t > prev) {
+            lastSampleByProfile.set(ps.profileId, t);
+            lastStatusByProfile.set(ps.profileId, String(ps.status || ''));
+          }
+        }
+        const EXTRACT_MIN_GAP_MS = 2000;
+        const mainExtracted = /^(Survived|Runner)$/i.test(raid.exitStatus || '');
+
         return groupedBy.map((gp, groupIndex) => {
           const sorted = sortPlayers(gp);
           return sorted.map((p, index) => {
             const SAIN = getPlayerDifficultyAndBrain(p).toLowerCase();
-            const isDead = _.chain(raid.player_status).filter((ps) => ps.profileId === p.profileId && ps.status === 'Dead').sortBy('time', 'desc').first().value();
             const isMainPlayer = p.profileId === raid.profileId;
+            const lastSample = lastSampleByProfile.get(p.profileId) ?? 0;
+            const lastStatus = lastStatusByProfile.get(p.profileId) ?? '';
+            // Main player: BotChecker never writes Dead for the local
+            // human (different code path), so trust raid.exitStatus.
+            // Bots: a 'Dead' sample is authoritative; the time-gap
+            // fallback handles bots removed without status records.
+            const isDead = isMainPlayer
+              ? !mainExtracted && /^(Killed|MissingInAction|LeftRaid|Left)$/i.test(raid.exitStatus || '')
+              : !!_.chain(raid.player_status).filter((ps) => ps.profileId === p.profileId && ps.status === 'Dead').sortBy('time', 'desc').first().value();
+            const isExtracted = isMainPlayer
+              ? (!isDead && mainExtracted)
+              : (!isDead && (
+                  lastStatus === 'Unspawned'
+                  || lastStatus === 'Unknown'
+                  || (lastSample > 0 && raidEndTime > 0 && lastSample < raidEndTime - EXTRACT_MIN_GAP_MS)
+                ));
             const badge = getFactionBadge(p, isMainPlayer);
             const stats = calcStats?.get(p.profileId);
             const accuracy = stats?.accuracy || 0;
@@ -446,7 +503,9 @@ export default function RaidOverview() {
                 <td className="text-center p-2 border-x border-eft">
                   {isDead
                     ? <span className="text-red-500 font-semibold">KIA</span>
-                    : <span className="text-green-500 font-semibold">Alive</span>
+                    : isExtracted
+                      ? <span className="text-blue-400 font-semibold">Extracted</span>
+                      : <span className="text-green-500 font-semibold">Alive</span>
                   }
                 </td>
                 <td className="text-right p-2 capitalize">{raid.detectedMods?.match(/SAIN/gi) ? SAIN : ''}</td>

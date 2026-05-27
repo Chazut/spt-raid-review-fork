@@ -161,6 +161,72 @@ const api = {
         } catch (error) {
             return [];
         }
+    },
+
+    getRaidBotQuests : async function(raidId: string) : Promise<any[]> {
+        try {
+            const response = await fetch(hostname + `/api/raids/${raidId}/bot_quests`);
+            return await response.json();
+        } catch (error) {
+            return [];
+        }
+    },
+
+    getRaidBotObjectives : async function(raidId: string) : Promise<any[]> {
+        try {
+            const response = await fetch(hostname + `/api/raids/${raidId}/bot_objectives`);
+            return await response.json();
+        } catch (error) {
+            return [];
+        }
+    },
+
+    getRaidPhobosField : async function(raidId: string) : Promise<any[]> {
+        try {
+            const response = await fetch(hostname + `/api/raids/${raidId}/phobos_field`);
+            return await response.json();
+        } catch (error) {
+            return [];
+        }
+    },
+
+    getRaidOrbitField : async function(raidId: string) : Promise<any[]> {
+        try {
+            const response = await fetch(hostname + `/api/raids/${raidId}/orbit_field`);
+            return await response.json();
+        } catch (error) {
+            return [];
+        }
+    },
+
+    getRaidOrbitBotObjectives : async function(raidId: string) : Promise<any[]> {
+        try {
+            const response = await fetch(hostname + `/api/raids/${raidId}/orbit_bot_objectives`);
+            return await response.json();
+        } catch (error) {
+            return [];
+        }
+    },
+
+    getRaidOrbitMainObjectives : async function(raidId: string) : Promise<any[]> {
+        try {
+            const response = await fetch(hostname + `/api/raids/${raidId}/orbit_main_objectives`);
+            return await response.json();
+        } catch (error) {
+            return [];
+        }
+    },
+
+    // Map of SPT quest zoneId → quest title (built server-side from
+    // quests.json + locale). Used to resolve friendly names on ORBIT
+    // Quest waypoint tooltips. One-shot, cached server-side and frontend-side.
+    getQuestNames : async function() : Promise<Record<string, string>> {
+        try {
+            const response = await fetch(hostname + `/api/quest_names`);
+            return await response.json();
+        } catch (error) {
+            return {};
+        }
     }
 }
 

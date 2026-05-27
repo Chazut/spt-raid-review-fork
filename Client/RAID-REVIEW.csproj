@@ -7,10 +7,10 @@
 		<AssemblyDescription>A post raid review tool for SPT</AssemblyDescription>
 		<AssemblyCompany>EkkyLLC</AssemblyCompany>
 		<AssemblyProduct>RAID_REVIEW</AssemblyProduct>
-		<AssemblyVersion>1.0.2</AssemblyVersion>
+		<AssemblyVersion>1.1.0</AssemblyVersion>
 		<Copyright>2024 © Ekky</Copyright>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-		<OutputPath>C:\Games\SPT-4.0\BepInEx\plugins\</OutputPath>
+		<OutputPath>C:\Games\SPT-4.0-hardcore\BepInEx\plugins\</OutputPath>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
@@ -93,6 +93,14 @@
 		</Reference>
 		<Reference Include="Sirenix.Serialization">
 			<HintPath>dependencies\4.0.X\Sirenix.Serialization.dll</HintPath>
+			<Private>false</Private>
+		</Reference>
+		<!-- ORBIT public telemetry API. Soft dependency at runtime — the
+		     Orbit_Integration class isolates all ORBIT-typed calls behind a
+		     Chainloader detection so the assembly is only loaded when ORBIT
+		     is installed. -->
+		<Reference Include="ORBIT">
+			<HintPath>dependencies\4.0.X\ORBIT.dll</HintPath>
 			<Private>false</Private>
 		</Reference>
 	</ItemGroup>

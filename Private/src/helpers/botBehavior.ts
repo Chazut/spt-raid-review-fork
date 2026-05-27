@@ -8,12 +8,14 @@ export const BEHAVIOR_CATEGORIES: Record<string, BehaviorCategory> = {
     combat:   { key: 'combat',   label: 'Combat',   color: '#EF4444' },
     search:   { key: 'search',   label: 'Search',   color: '#F59E0B' },
     movement: { key: 'movement', label: 'Movement', color: '#3B82F6' },
+    cover:    { key: 'cover',    label: 'Cover',    color: '#0EA5E9' },
     patrol:   { key: 'patrol',   label: 'Patrol',   color: '#22C55E' },
     medical:  { key: 'medical',  label: 'Medical',  color: '#EC4899' },
     loot:     { key: 'loot',     label: 'Loot',     color: '#FACC15' },
     flee:     { key: 'flee',     label: 'Flee',     color: '#A855F7' },
-    extract:  { key: 'extract',  label: 'Extract',  color: '#06B6D4' },
+    extract:  { key: 'extract',  label: 'Extract',  color: '#2DD4BF' },
     grenade:  { key: 'grenade',  label: 'Grenade',  color: '#FF6B6B' },
+    quest:    { key: 'quest',    label: 'Quest',    color: '#FBCFE8' },
     idle:     { key: 'idle',     label: 'Idle',     color: '#374151' },
     other:    { key: 'other',    label: 'Other',    color: '#6B7280' },
 }
@@ -30,11 +32,13 @@ const DECISION_TO_CATEGORY: Record<string, string> = {
     search: 'search',
     // Movement
     goToPoint: 'movement', goToPointTactical: 'movement',
-    goToCoverPoint: 'movement', goToCoverPointTactical: 'movement',
-    runToCover: 'movement', runToCoverZigZag: 'movement', teleportToCover: 'movement',
     holdPosition: 'movement',
     goToEnemy: 'movement', goToEnemyZigZag: 'movement',
     runToEnemy: 'movement', runToEnemyZigZag: 'movement',
+    // Cover — split from Movement so a "saw enemy → seek cover" transition
+    // is visible on the gantt instead of merging into the blue band.
+    goToCoverPoint: 'cover', goToCoverPointTactical: 'cover',
+    runToCover: 'cover', runToCoverZigZag: 'cover', teleportToCover: 'cover',
     // Patrol
     simplePatrol: 'patrol', followerPatrol: 'patrol', alternativePatrol: 'patrol',
     standBy: 'patrol', peaceful: 'patrol', peaceLook: 'patrol', peaceHardAim: 'patrol',
@@ -62,7 +66,7 @@ const DECISION_TO_CATEGORY: Record<string, string> = {
     DogFight: 'combat', RushEnemy: 'combat', MeleeAttack: 'combat',
     FightZombies: 'combat', Freeze: 'combat',
     Search: 'search',
-    SeekCover: 'movement', ShiftCover: 'movement', Retreat: 'movement',
+    SeekCover: 'cover', ShiftCover: 'cover', Retreat: 'cover',
     ThrowGrenade: 'grenade',
 
     // ── SAIN ESquadDecision ──
@@ -86,13 +90,53 @@ const DECISION_TO_CATEGORY: Record<string, string> = {
 
 export function getBehaviorCategory(decision: string | undefined | null): BehaviorCategory {
     if (!decision || decision === '') return BEHAVIOR_CATEGORIES.idle
+    if (decision.startsWith('QB:')) return BEHAVIOR_CATEGORIES.quest
+    if (decision.startsWith('LootingBots:')) return BEHAVIOR_CATEGORIES.loot
+    if (decision.startsWith('BL:')) return BEHAVIOR_CATEGORIES.movement
+    if (decision.startsWith('Phobos:')) {
+        // Legacy upstream Phobos objective category → behavior category
+        const cat = decision.substring(7)
+        if (cat === 'ContainerLoot' || cat === 'LooseLoot' || cat === 'Corpse') return BEHAVIOR_CATEGORIES.loot
+        if (cat === 'Quest') return BEHAVIOR_CATEGORIES.quest
+        if (cat === 'Exfil') return BEHAVIOR_CATEGORIES.extract
+        return BEHAVIOR_CATEGORIES.movement
+    }
+    if (decision.startsWith('Orbit:')) {
+        // ORBIT objective category → behavior category
+        const cat = decision.substring(6)
+        if (cat === 'ContainerLoot' || cat === 'LooseLoot' || cat === 'Corpse') return BEHAVIOR_CATEGORIES.loot
+        if (cat === 'Quest') return BEHAVIOR_CATEGORIES.quest
+        if (cat === 'Exfil') return BEHAVIOR_CATEGORIES.extract
+        return BEHAVIOR_CATEGORIES.movement
+    }
     const cleanDecision = decision.startsWith('SAIN:') ? decision.substring(5) : decision
     const categoryKey = DECISION_TO_CATEGORY[cleanDecision] ?? 'other'
     return BEHAVIOR_CATEGORIES[categoryKey]
 }
 
+// Friendlier labels for ORBIT / legacy Phobos objective categories. Maps
+// the raw enum name (e.g. "ContainerLoot") to a human label. Anything not
+// listed falls through to the generic camelCase splitter.
+const OBJECTIVE_CATEGORY_LABELS: Record<string, string> = {
+    ContainerLoot: 'Looking for loot',
+    LooseLoot:     'Looking for loot',
+    Corpse:        'Looting corpse',
+    Synthetic:     'Patrolling',
+    Quest:         'On quest',
+    Exfil:         'Heading to extract',
+}
+
+function formatObjectiveCategory(cat: string): string {
+    return OBJECTIVE_CATEGORY_LABELS[cat] ?? cat.replace(/([A-Z])/g, ' $1').trim()
+}
+
 export function formatDecisionLabel(decision: string | undefined | null): string {
     if (!decision || decision === '') return ''
+    if (decision.startsWith('QB:')) return decision.substring(3)
+    if (decision.startsWith('LootingBots:')) return decision.substring(12)
+    if (decision.startsWith('BL:')) return decision.substring(3).replace(/^Bot/, '').replace(/Layer$/, '')
+    if (decision.startsWith('Phobos:')) return formatObjectiveCategory(decision.substring(7))
+    if (decision.startsWith('Orbit:'))  return formatObjectiveCategory(decision.substring(6))
     const clean = decision.startsWith('SAIN:') ? decision.substring(5) : decision
     // Convert camelCase to readable: "shootFromPlace" -> "Shoot From Place"
     return clean.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim()

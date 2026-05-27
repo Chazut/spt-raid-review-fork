@@ -3,7 +3,7 @@ set -e
 
 # Configuration
 default_name="raid_review"
-default_version="1.0.2"
+default_version="1.1.0"
 current_dir=$(pwd)
 
 echo "Let's start the deployment process..."
@@ -55,7 +55,7 @@ done
 # Copy native SQLite runtimes (win-x64 + linux-x64) into runtimes subfolder
 # Must NOT be in the mod root — SPT mod loader would try to load them as managed assemblies
 build_runtimes="ServerMod/bin/Release/RaidReview/runtimes"
-for rid in win-x64 linux-x64; do
+for rid in win-x64 linux-x64 linux-arm64; do
     native_src="$build_runtimes/$rid/native"
     if [ -d "$native_src" ]; then
         mkdir -p "$server_dest/runtimes/$rid/native"

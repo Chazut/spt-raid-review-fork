@@ -31,6 +31,36 @@ public class RaidReviewWebServer
     private WebApplication? _app;
     private readonly HashSet<string> _raidsToProcess = new();
     private byte[]? _cachedLocaleJson;
+    // Lazy-built once per server lifetime — quest data + locale don't
+    // change at runtime so a single in-memory cache is fine.
+    private byte[]? _cachedQuestNamesJson;
+
+    // Walk every property of a quest JSON element (depth-first) and
+    // register each "zoneId" string field as belonging to this quest's
+    // title in the supplied map (first claim wins).
+    private static void CollectZoneIds(JsonElement element, string title, Dictionary<string, string> map)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                foreach (var p in element.EnumerateObject())
+                {
+                    if (p.Name == "zoneId" && p.Value.ValueKind == JsonValueKind.String)
+                    {
+                        var z = p.Value.GetString();
+                        if (!string.IsNullOrEmpty(z) && !map.ContainsKey(z!)) map[z!] = title;
+                    }
+                    else
+                    {
+                        CollectZoneIds(p.Value, title, map);
+                    }
+                }
+                break;
+            case JsonValueKind.Array:
+                foreach (var item in element.EnumerateArray()) CollectZoneIds(item, title, map);
+                break;
+        }
+    }
 
     // React frontend embedded in the DLL — no .js files on disk in the mod folder
     private static readonly IReadOnlyDictionary<string, (byte[] Data, string ContentType)> _frontend = LoadEmbeddedFrontend();
@@ -197,6 +227,62 @@ public class RaidReviewWebServer
 
     private void RegisterApiRoutes(WebApplication app)
     {
+        // Build a one-shot zoneId → quest title map from the SPT
+        // quests.json + locale. Used by the raid-review map to resolve
+        // friendly quest names on Phobos Quest POI tooltips (the
+        // trigger gameObject names like "expl_zone_vremyan_case" are
+        // not user-facing). Substring matching applied client-side
+        // because the quest's zoneId is often a suffix of the trigger
+        // name (e.g. "vremyan_case" zoneId ↔ "expl_zone_vremyan_case"
+        // trigger).
+        app.MapGet("/api/quest_names", async context =>
+        {
+            if (_cachedQuestNamesJson == null)
+            {
+                var sptRoot = Path.GetFullPath(Path.Combine(_modFolder, "..", "..", ".."));
+                var questsPath = Path.Combine(sptRoot, "SPT_Data", "database", "templates", "quests.json");
+                var localePath = Path.Combine(sptRoot, "SPT_Data", "database", "locales", "global", "en.json");
+                var map = new Dictionary<string, string>();
+                try
+                {
+                    if (File.Exists(questsPath) && File.Exists(localePath))
+                    {
+                        var localeText = await File.ReadAllTextAsync(localePath);
+                        using var localeDoc = JsonDocument.Parse(localeText);
+                        var localeRoot = localeDoc.RootElement;
+
+                        var questsText = await File.ReadAllTextAsync(questsPath);
+                        using var questsDoc = JsonDocument.Parse(questsText);
+                        foreach (var quest in questsDoc.RootElement.EnumerateObject())
+                        {
+                            var qid = quest.Name;
+                            if (!localeRoot.TryGetProperty(qid + " name", out var titleProp)) continue;
+                            var title = titleProp.GetString();
+                            if (string.IsNullOrEmpty(title)) continue;
+                            // Walk the quest looking for "zoneId" string fields anywhere
+                            // (conditions, sub-conditions, counters…). First quest claiming
+                            // a zoneId wins — if multiple quests share a zone the map gets
+                            // an arbitrary pick, which is acceptable for a debug tooltip.
+                            CollectZoneIds(quest.Value, title, map);
+                        }
+                    }
+                    else
+                    {
+                        _logger.Warn($"Quest name lookup: missing source files ({questsPath} / {localePath})");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.Error("[QUEST_NAMES_BUILD]", ex);
+                }
+                _cachedQuestNamesJson = System.Text.Encoding.UTF8.GetBytes(
+                    System.Text.Json.JsonSerializer.Serialize(map));
+                _logger.Log($"Quest name lookup: built {map.Count} zoneId → title mappings");
+            }
+            context.Response.ContentType = "application/json";
+            await context.Response.Body.WriteAsync(_cachedQuestNamesJson);
+        });
+
         // Serve SPT locale data for item/weapon name resolution
         app.MapGet("/api/intl", async context =>
         {
@@ -347,6 +433,93 @@ public class RaidReviewWebServer
             }
         });
 
+        app.MapGet("/api/raids/{raidId}/bot_quests", async (HttpContext context, string raidId) =>
+        {
+            try
+            {
+                var data = await _db.QueryAsync("SELECT * FROM bot_quest WHERE raidId = $id ORDER BY time ASC", ("$id", raidId));
+                await context.Response.WriteAsJsonAsync(data);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("[API:BOT_QUESTS]", ex);
+                context.Response.StatusCode = 500;
+            }
+        });
+
+        app.MapGet("/api/raids/{raidId}/bot_objectives", async (HttpContext context, string raidId) =>
+        {
+            try
+            {
+                var data = await _db.QueryAsync("SELECT * FROM bot_objective WHERE raidId = $id ORDER BY time ASC", ("$id", raidId));
+                await context.Response.WriteAsJsonAsync(data);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("[API:BOT_OBJECTIVES]", ex);
+                context.Response.StatusCode = 500;
+            }
+        });
+
+        app.MapGet("/api/raids/{raidId}/phobos_field", async (HttpContext context, string raidId) =>
+        {
+            try
+            {
+                // advection/convergence/zones columns hold raw JSON text — the frontend
+                // JSON.parses those fields. Numbers are emitted by the serializer with
+                // invariant culture so no decimal-separator issues.
+                var data = await _db.QueryAsync("SELECT * FROM phobos_field WHERE raidId = $id ORDER BY time ASC", ("$id", raidId));
+                await context.Response.WriteAsJsonAsync(data);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("[API:PHOBOS_FIELD]", ex);
+                context.Response.StatusCode = 500;
+            }
+        });
+
+        app.MapGet("/api/raids/{raidId}/orbit_field", async (HttpContext context, string raidId) =>
+        {
+            try
+            {
+                var data = await _db.QueryAsync("SELECT * FROM orbit_field WHERE raidId = $id ORDER BY time ASC", ("$id", raidId));
+                await context.Response.WriteAsJsonAsync(data);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("[API:ORBIT_FIELD]", ex);
+                context.Response.StatusCode = 500;
+            }
+        });
+
+        app.MapGet("/api/raids/{raidId}/orbit_main_objectives", async (HttpContext context, string raidId) =>
+        {
+            try
+            {
+                var data = await _db.QueryAsync("SELECT * FROM orbit_main_objectives WHERE raidId = $id ORDER BY time ASC", ("$id", raidId));
+                await context.Response.WriteAsJsonAsync(data);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("[API:ORBIT_MAIN_OBJECTIVES]", ex);
+                context.Response.StatusCode = 500;
+            }
+        });
+
+        app.MapGet("/api/raids/{raidId}/orbit_bot_objectives", async (HttpContext context, string raidId) =>
+        {
+            try
+            {
+                var data = await _db.QueryAsync("SELECT * FROM orbit_bot_objective WHERE raidId = $id ORDER BY time ASC", ("$id", raidId));
+                await context.Response.WriteAsJsonAsync(data);
+            }
+            catch (Exception ex)
+            {
+                _logger.Error("[API:ORBIT_BOT_OBJECTIVES]", ex);
+                context.Response.StatusCode = 500;
+            }
+        });
+
         app.MapGet("/api/raids/{raidId}/positions/heatmap", async (HttpContext context, string raidId) =>
         {
             var raw = _fileService.ReadFile("positions", "", "", $"{raidId}_{_compiler.ActiveVersion}_positions.json");
@@ -402,7 +575,8 @@ public class RaidReviewWebServer
 
             foreach (var raidId in raidIds)
             {
-                foreach (var table in new[] { "raid", "kills", "looting", "player", "player_status", "ballistic", "loose_loot", "player_inventory" })
+                // Delete child tables first, then raid (parent) last — FK constraints require this order
+                foreach (var table in new[] { "kills", "looting", "player", "player_status", "ballistic", "loose_loot", "player_inventory", "bot_quest", "bot_objective", "phobos_field", "orbit_field", "orbit_bot_objective", "orbit_main_objectives", "raid" })
                     await _db.ExecuteAsync($"DELETE FROM {table} WHERE raidId = $id", ("$id", raidId));
 
                 _fileService.DeleteFile("positions", "", "", $"{raidId}_positions");

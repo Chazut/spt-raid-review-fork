@@ -97,8 +97,12 @@ public class RaidReviewMod : IOnLoad
             postProcessTimer = null;
         }
 
+        // Item resolver (handbook prices + localized name fallback for headless)
+        var itemResolver = new ItemResolver(modFolder, logger);
+        itemResolver.Initialize();
+
         // WebSocket packet handler
-        var wsHandler = new WsPacketHandler(db, sessionManager, fileService, logger);
+        var wsHandler = new WsPacketHandler(db, sessionManager, fileService, logger, itemResolver);
         wsHandler.SetPostProcessingCallbacks(StartPostProcessing, StopPostProcessing);
 
         // Hourly garbage collection if configured

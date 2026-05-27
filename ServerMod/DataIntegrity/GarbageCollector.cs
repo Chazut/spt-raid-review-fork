@@ -87,7 +87,7 @@ public class GarbageCollector
     private async Task DeleteRaidDataAsync(string raidId)
     {
         // Delete child tables first, then raid (parent) last — foreign keys enforce this order
-        foreach (var table in new[] { "kills", "looting", "player", "player_status", "ballistic", "loose_loot", "player_inventory", "raid" })
+        foreach (var table in new[] { "kills", "looting", "player", "player_status", "ballistic", "loose_loot", "player_inventory", "bot_quest", "bot_objective", "phobos_field", "orbit_field", "orbit_bot_objective", "orbit_main_objectives", "raid" })
         {
             await _db.ExecuteAsync($"DELETE FROM {table} WHERE raidId = $raidId",
                 ("$raidId", raidId));

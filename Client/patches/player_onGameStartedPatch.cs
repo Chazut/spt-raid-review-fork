@@ -84,6 +84,9 @@ namespace RAID_REVIEW
 
                 RAID_REVIEW.inRaid = true;
                 RAID_REVIEW.ResetLooseLootFlag();
+                RAID_REVIEW.ResetPhobosFieldFlag();
+                RAID_REVIEW.ResetOrbitFieldFlag();
+                RAID_REVIEW.ResetOrbitMainObjFlag();
                 Logger.LogInfo("RAID_REVIEW :::: INFO :::: RAID Information Populated");
 
                 if (RAID_REVIEW.RecordingNotification.Value && RAID_REVIEW.WebSocketConnected)

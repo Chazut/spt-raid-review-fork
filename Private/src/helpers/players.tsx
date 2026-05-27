@@ -49,6 +49,14 @@ export function getMarkerLabel(player: any): string | null {
     if (type.includes('BTR')) return 'BTR_ICON'
     if (type.includes('SNIPER')) return 'Sn'
 
+    // Custom mod bots (FACTION_MOD): generate initials from the WildSpawnType
+    // e.g. BOSSLEGION|FACTION_MOD → "Le", LEGIONNAIRE|FACTION_MOD → "Le"
+    if (type.includes('FACTION_MOD')) {
+        const rawName = type.split('|')[0].replace('BOSS', '').replace('FOLLOWER', '')
+        if (rawName.length >= 2) return rawName.substring(0, 2).charAt(0).toUpperCase() + rawName.substring(1, 2).toLowerCase()
+        if (rawName.length === 1) return rawName.toUpperCase()
+    }
+
     return null
 }
 
@@ -58,6 +66,15 @@ export function getPlayerColor(player: any, index: number): string {
     let botMapping = (BotMapping as any)[player.type]
     if (player.name === 'Knight') {
         botMapping = { type: 'GOON' }
+    }
+    if (!botMapping && typeof player.type === 'string' && player.type.includes('|')) {
+        const category = player.type.split('|')[1]
+        const name = player.type.split('|')[0].toLowerCase()
+        if (category === 'FACTION_MOD') {
+            botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' }
+        } else {
+            botMapping = { type: category }
+        }
     }
     if (!botMapping) {
         botMapping = { type: 'UNKNOWN' }
@@ -100,6 +117,26 @@ export function getLegendIcon(player: any, color: string, pmcIdx?: number): JSX.
     return <span style={{ width: '10px', height: '10px', minWidth: '10px', minHeight: '10px', borderRadius: '50%', marginRight: '6px', background: color, border: '1px solid rgba(255,255,255,0.4)', flexShrink: 0, display: 'inline-block' }}></span>
 }
 
+/**
+ * Extracts the specific role of a faction-mod bot from its type name.
+ * e.g. "REMNANT RIFLEMAN|RUAF" → "Rifleman", "UNTAR SQUAD LEADER|UNTAR" → "Squad Leader"
+ * Returns '' if the bot has no recognizable faction role.
+ */
+export function getFactionRole(player: any): string {
+    const typeName = ((player?.type || '') as string).split('|')[0]
+    if (!typeName) return ''
+    // Strip the known faction prefix (longest first so "BLACK DIV" matches before "BLACK")
+    const prefixes = ['BLACK DIV', 'RUAF', 'REMNANT', 'UNTAR', 'MERCENARY']
+    let role = typeName
+    for (const p of prefixes) {
+        if (typeName === p) { role = typeName; break }
+        if (typeName.startsWith(p + ' ')) { role = typeName.slice(p.length + 1); break }
+    }
+    // Title case
+    return role.toLowerCase().split(' ').filter(Boolean)
+        .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
+}
+
 export function getPlayerFaction(player: any): string {
     if (player === undefined) return 'Unknown'
 
@@ -109,6 +146,15 @@ export function getPlayerFaction(player: any): string {
 
     let botMapping = (BotMapping as any)[player.type]
     if (player.name === 'Knight') botMapping = { type: 'GOON' }
+    if (!botMapping && typeof player.type === 'string' && player.type.includes('|')) {
+        const category = player.type.split('|')[1]
+        const name = player.type.split('|')[0].toLowerCase()
+        if (category === 'FACTION_MOD') {
+            botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' }
+        } else {
+            botMapping = { type: category }
+        }
+    }
     if (!botMapping) return 'Unknown'
 
     switch (botMapping.type) {
