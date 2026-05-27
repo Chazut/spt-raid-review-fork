@@ -338,6 +338,96 @@ public class WsPacketHandler
                         ("$objZ", GetString(payload, "objectiveZ")));
                     break;
                 }
+
+                case "BOT_OBJECTIVE":
+                {
+                    if (raidId == null) break;
+                    await _db.ExecuteAsync(
+                        @"INSERT INTO bot_objective (raidId, profileId, time, status, category, isLeader, objectiveX, objectiveY, objectiveZ)
+                          VALUES ($raidId, $profileId, $time, $status, $category, $isLeader, $objX, $objY, $objZ)",
+                        ("$raidId", raidId!),
+                        ("$profileId", GetString(payload, "profileId")),
+                        ("$time", GetString(payload, "time")),
+                        ("$status", GetString(payload, "status")),
+                        ("$category", GetString(payload, "category")),
+                        ("$isLeader", payload.TryGetProperty("isLeader", out var ld) && ld.GetBoolean() ? "1" : "0"),
+                        ("$objX", GetString(payload, "objectiveX")),
+                        ("$objY", GetString(payload, "objectiveY")),
+                        ("$objZ", GetString(payload, "objectiveZ")));
+                    break;
+                }
+
+                case "PHOBOS_FIELD":
+                {
+                    if (raidId == null) break;
+                    await _db.ExecuteAsync(
+                        @"INSERT INTO phobos_field (raidId, time, gridCols, gridRows, worldMinX, worldMinZ, cellSize, advection, convergence, zones)
+                          VALUES ($raidId, $time, $gridCols, $gridRows, $worldMinX, $worldMinZ, $cellSize, $advection, $convergence, $zones)",
+                        ("$raidId", raidId!),
+                        ("$time", GetString(payload, "time")),
+                        ("$gridCols", GetString(payload, "gridCols")),
+                        ("$gridRows", GetString(payload, "gridRows")),
+                        ("$worldMinX", GetString(payload, "worldMinX")),
+                        ("$worldMinZ", GetString(payload, "worldMinZ")),
+                        ("$cellSize", GetString(payload, "cellSize")),
+                        ("$advection", GetRawArray(payload, "advection")),
+                        ("$convergence", GetRawArray(payload, "convergence")),
+                        ("$zones", GetRawArray(payload, "zones")));
+                    break;
+                }
+
+                case "ORBIT_FIELD":
+                {
+                    if (raidId == null) break;
+                    // convergence column omitted — defaults to '[]' per schema.
+                    // The player-attraction field isn't captured by ORBIT;
+                    // the column is kept so downstream queries don't have
+                    // to special-case its absence.
+                    await _db.ExecuteAsync(
+                        @"INSERT INTO orbit_field (raidId, time, gridCols, gridRows, worldMinX, worldMinZ, cellSize, advection, zones)
+                          VALUES ($raidId, $time, $gridCols, $gridRows, $worldMinX, $worldMinZ, $cellSize, $advection, $zones)",
+                        ("$raidId", raidId!),
+                        ("$time", GetString(payload, "time")),
+                        ("$gridCols", GetString(payload, "gridCols")),
+                        ("$gridRows", GetString(payload, "gridRows")),
+                        ("$worldMinX", GetString(payload, "worldMinX")),
+                        ("$worldMinZ", GetString(payload, "worldMinZ")),
+                        ("$cellSize", GetString(payload, "cellSize")),
+                        ("$advection", GetRawArray(payload, "advection")),
+                        ("$zones", GetRawArray(payload, "zones")));
+                    break;
+                }
+
+                case "ORBIT_MAIN_OBJECTIVES":
+                {
+                    if (raidId == null) break;
+                    await _db.ExecuteAsync(
+                        @"INSERT INTO orbit_main_objectives (raidId, time, squads)
+                          VALUES ($raidId, $time, $squads)",
+                        ("$raidId", raidId!),
+                        ("$time", GetString(payload, "time")),
+                        ("$squads", GetRawArray(payload, "squads")));
+                    break;
+                }
+
+                case "ORBIT_BOT_OBJECTIVE":
+                {
+                    if (raidId == null) break;
+                    await _db.ExecuteAsync(
+                        @"INSERT INTO orbit_bot_objective (raidId, profileId, time, status, category, isLeader, objectiveX, objectiveY, objectiveZ, extractReason)
+                          VALUES ($raidId, $profileId, $time, $status, $category, $isLeader, $objX, $objY, $objZ, $extractReason)",
+                        ("$raidId", raidId!),
+                        ("$profileId", GetString(payload, "profileId")),
+                        ("$time", GetString(payload, "time")),
+                        ("$status", GetString(payload, "status")),
+                        ("$category", GetString(payload, "category")),
+                        ("$isLeader", payload.TryGetProperty("isLeader", out var ldOrbit) && ldOrbit.GetBoolean() ? "1" : "0"),
+                        ("$objX", GetString(payload, "objectiveX")),
+                        ("$objY", GetString(payload, "objectiveY")),
+                        ("$objZ", GetString(payload, "objectiveZ")),
+                        ("$extractReason", GetString(payload, "extractReason")));
+                    break;
+                }
             }
         }
         catch (Exception ex)
@@ -374,6 +464,14 @@ public class WsPacketHandler
         if (el.TryGetProperty(key, out var v))
             return v.ValueKind == JsonValueKind.Null ? "" : v.ToString();
         return "";
+    }
+
+    // Returns the raw JSON text of a nested array property (for storing as a TEXT blob).
+    private static string GetRawArray(JsonElement el, string key)
+    {
+        if (el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Array)
+            return v.GetRawText();
+        return "[]";
     }
 
     /// <summary>

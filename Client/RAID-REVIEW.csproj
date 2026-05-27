@@ -10,23 +10,12 @@
 		<AssemblyVersion>1.1.0</AssemblyVersion>
 		<Copyright>2024 © Ekky</Copyright>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
-		<OutputPath>C:\Games\SPT-4.0\BepInEx\plugins\</OutputPath>
+		<OutputPath>C:\Games\SPT-4.0-hardcore\BepInEx\plugins\</OutputPath>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">
 		<Optimize>False</Optimize>
 	</PropertyGroup>
-
-	<!-- Also deploy to the hardcore SPT install if present -->
-	<Target Name="DeployToHardcore" AfterTargets="Build">
-		<PropertyGroup>
-			<HardcorePluginsDir>C:\Games\SPT-4.0-hardcore\BepInEx\plugins</HardcorePluginsDir>
-		</PropertyGroup>
-		<Copy SourceFiles="$(OutputPath)$(AssemblyName).dll"
-		      DestinationFolder="$(HardcorePluginsDir)"
-		      SkipUnchangedFiles="true"
-		      Condition="Exists('$(HardcorePluginsDir)')" />
-	</Target>
 
 	<ItemGroup>
 		<Reference Include="0Harmony">
@@ -104,6 +93,14 @@
 		</Reference>
 		<Reference Include="Sirenix.Serialization">
 			<HintPath>dependencies\4.0.X\Sirenix.Serialization.dll</HintPath>
+			<Private>false</Private>
+		</Reference>
+		<!-- ORBIT public telemetry API. Soft dependency at runtime — the
+		     Orbit_Integration class isolates all ORBIT-typed calls behind a
+		     Chainloader detection so the assembly is only loaded when ORBIT
+		     is installed. -->
+		<Reference Include="ORBIT">
+			<HintPath>dependencies\4.0.X\ORBIT.dll</HintPath>
 			<Private>false</Private>
 		</Reference>
 	</ItemGroup>

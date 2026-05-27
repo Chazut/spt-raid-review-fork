@@ -33,11 +33,9 @@
     </EmbeddedResource>
   </ItemGroup>
 
-  <!-- Deploy to SPT user/mods folder after build with clean structure.
-       Copies to multiple SPT installs if they exist (default + hardcore). -->
+  <!-- Deploy to SPT user/mods folder after build with clean structure. -->
   <Target Name="DeployToSpt" AfterTargets="Build">
     <ItemGroup>
-      <SptInstall Include="C:\Games\SPT-4.0\SPT\user\mods\RaidReview" Condition="Exists('C:\Games\SPT-4.0\SPT\user\mods')" />
       <SptInstall Include="C:\Games\SPT-4.0-hardcore\SPT\user\mods\RaidReview" Condition="Exists('C:\Games\SPT-4.0-hardcore\SPT\user\mods')" />
     </ItemGroup>
     <ItemGroup>

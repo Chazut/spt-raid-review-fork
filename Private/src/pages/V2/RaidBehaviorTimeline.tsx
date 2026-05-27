@@ -72,6 +72,15 @@ function ensureHatchStyles() {
                 rgba(154,136,102,0.15) 5px
             ) !important;
         }
+        .rr-hatch-extracted {
+            background: repeating-linear-gradient(
+                -45deg,
+                transparent,
+                transparent 3px,
+                rgba(96,165,250,0.30) 3px,
+                rgba(96,165,250,0.30) 5px
+            ) !important;
+        }
     `
     document.head.appendChild(style)
 }
@@ -108,7 +117,7 @@ export default function RaidBehaviorTimeline() {
         if (!positions || !raid?.players) return { players: [] as any[], raidStart: 0, raidEnd: 0 }
 
         let raidStart = Infinity, raidEnd = 0
-        const playerRows: { profileId: string, name: string, player: any, color: string, segments: BehaviorSegment[], pmcIdx?: number, spawnTime: number, deathTime: number | null }[] = []
+        const playerRows: { profileId: string, name: string, player: any, color: string, segments: BehaviorSegment[], pmcIdx?: number, spawnTime: number, deathTime: number | null, extractTime: number | null }[] = []
 
         for (const p of raid.players) {
             // Skip BTR and human players (only show bots)
@@ -127,6 +136,23 @@ export default function RaidBehaviorTimeline() {
             }
 
             const idx = raid.players.indexOf(p)
+            // Extract time = bot stopped reporting positions but had no
+            // death event. Conservative threshold: last position must
+            // be at least 2 s before the latest raid time (so a bot
+            // who simply happens to be at the very tail of the data
+            // isn't false-flagged as extracted). Raw raidEnd is the
+            // max time across ALL bots — if this bot's last sample is
+            // significantly earlier, they probably extracted.
+            let lastSampleTime = 0
+            for (const e of entries) {
+                const t = Number(e.time)
+                if (t > lastSampleTime) lastSampleTime = t
+            }
+            const deathTime = deathTimes[p.profileId] ?? null
+            let extractTime: number | null = null
+            // Compute later once we know raidEnd — push as null for now,
+            // patch in the loop below.
+
             playerRows.push({
                 profileId: p.profileId,
                 name: intl(p.name, intl_dir),
@@ -135,8 +161,27 @@ export default function RaidBehaviorTimeline() {
                 segments,
                 pmcIdx: pmcIndexMap[p.profileId],
                 spawnTime: p.spawnTime,
-                deathTime: deathTimes[p.profileId] ?? null,
+                deathTime,
+                extractTime, // patched after raidEnd is finalised
             })
+            // Stash the lastSampleTime on the row so we can resolve
+            // extractTime after the raidEnd is known.
+            ;(playerRows[playerRows.length - 1] as any)._lastSampleTime = lastSampleTime
+        }
+
+        // Resolve extract time per row. A bot is considered extracted
+        // when it stopped sending positions at least 2 s before raidEnd
+        // AND has no death event. The last-sample time becomes the
+        // extractTime; the post-extract span is drawn as a blue hash.
+        const extractMinGapMs = 2000
+        for (const row of playerRows) {
+            const lastSample = (row as any)._lastSampleTime as number
+            if (row.deathTime != null) continue
+            if (lastSample > 0 && lastSample < raidEnd - extractMinGapMs)
+            {
+                row.extractTime = lastSample
+            }
+            delete (row as any)._lastSampleTime
         }
 
         // Sort by team/side, then by name
@@ -255,6 +300,10 @@ export default function RaidBehaviorTimeline() {
                     <span className="rr-hatch-dead" style={{ width: 12, height: 12, borderRadius: 2, display: 'inline-block', border: '1px solid rgba(239,68,68,0.3)' }}></span>
                     <span className="text-eft">Dead</span>
                 </div>
+                <div className="flex items-center gap-1" style={{ fontSize: '13px' }}>
+                    <span className="rr-hatch-extracted" style={{ width: 12, height: 12, borderRadius: 2, display: 'inline-block', border: '1px solid rgba(96,165,250,0.4)' }}></span>
+                    <span className="text-eft">Extracted</span>
+                </div>
                 {viewRange && (
                     <button onClick={resetZoom} className="px-2 py-0.5 text-black bg-eft hover:opacity-75" style={{ fontSize: '12px' }}>
                         Reset Zoom
@@ -299,6 +348,17 @@ export default function RaidBehaviorTimeline() {
                 if (deathTime != null && deathTime < effectiveEnd) {
                     deathLeft = Math.max(0, ((deathTime - effectiveStart) / viewDuration) * 100)
                     deathWidth = Math.max(0, 100 - deathLeft)
+                }
+
+                // Extract hatched zone (after extract to end of view —
+                // blue hash, only for bots that despawned cleanly via
+                // an exfil; mutually exclusive with death since the
+                // detection requires no death event).
+                const extractTime = row.extractTime
+                let extractLeft = 0, extractWidth = 0
+                if (extractTime != null && extractTime < effectiveEnd) {
+                    extractLeft = Math.max(0, ((extractTime - effectiveStart) / viewDuration) * 100)
+                    extractWidth = Math.max(0, 100 - extractLeft)
                 }
 
                 return (
@@ -353,6 +413,13 @@ export default function RaidBehaviorTimeline() {
                                     position: 'absolute', left: `${deathLeft}%`, width: `${deathWidth}%`,
                                     height: '100%', zIndex: 3,
                                 }} />
+                            )}
+                            {/* Extracted hatched area */}
+                            {extractWidth > 0.1 && (
+                                <div className="rr-hatch-extracted" style={{
+                                    position: 'absolute', left: `${extractLeft}%`, width: `${extractWidth}%`,
+                                    height: '100%', zIndex: 3,
+                                }} title="Extracted" />
                             )}
                         </div>
                     </div>

@@ -57,6 +57,7 @@ namespace RAID_REVIEW
             {
                     RAID_REVIEW.trackingPlayers = new Dictionary<string, TrackingPlayer>();
                     RAID_REVIEW._lastBotQuestState.Clear();
+                    RAID_REVIEW._lastBotObjectiveState.Clear();
                     RAID_REVIEW.sessionId = null;
             }
         }

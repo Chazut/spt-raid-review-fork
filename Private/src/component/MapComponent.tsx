@@ -110,6 +110,29 @@ function getLootPriceColor(totalPrice: number): string {
     return '#64748B'                              // slate
 }
 
+// Resolves a Phobos Quest POI's trigger.gameObject.name (e.g.
+// "expl_zone_vremyan_case") to a friendly quest title via the
+// server-built zoneId → title map. SPT quests reference zones by
+// their bare id ("vremyan_case"), but the Unity gameObject often
+// prefixes them ("expl_zone_", "place_", "quest_terminal_"…). Match
+// strategy: exact first, then suffix (triggerName ends with zoneId
+// in the map), then substring. Returns null if no match.
+function resolveQuestName(triggerName: string, map: Record<string, string>): string | null {
+    if (!triggerName || !map) return null
+    if (map[triggerName]) return map[triggerName]
+    let best: string | null = null
+    let bestLen = 0
+    for (const zoneId of Object.keys(map)) {
+        if (zoneId.length < 4) continue // skip 1-2 char numeric ids that match anything
+        if (triggerName === zoneId
+            || triggerName.endsWith(zoneId)
+            || triggerName.includes(zoneId)) {
+            if (zoneId.length > bestLen) { best = map[zoneId]; bestLen = zoneId.length }
+        }
+    }
+    return best
+}
+
 function createPlayerMarker(latlng: any, color: string, player: any, proportionalScale: number, opacity: number = 1, pmcIndex?: number, tooltipText?: string, behaviorColor?: string | null, hpPercent?: number): L.Layer {
     const displayName = tooltipText || getDisplayName(player)
     const tooltipOpts: L.TooltipOptions = { direction: 'top', offset: [0, -10], className: 'player-tooltip' }
@@ -314,6 +337,98 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     const [botQuestData, setBotQuestData] = useState<any[]>([])
     const [botQuestCollapsed, setBotQuestCollapsed] = useState(true)
     const botQuestLayerRef = useRef<L.LayerGroup | null>(null)
+
+    // Bot Objectives (Phobos integration)
+    const [showBotObjectives, setShowBotObjectives] = useState(() => localStorage.getItem('rr_showBotObjectives') !== 'false')
+    const [botObjectiveData, setBotObjectiveData] = useState<any[]>([])
+    const [botObjectiveCollapsed, setBotObjectiveCollapsed] = useState(true)
+    const botObjectiveLayerRef = useRef<L.LayerGroup | null>(null)
+
+    // Phobos advection field
+    const [showPhobosField, setShowPhobosField] = useState(() => localStorage.getItem('rr_showPhobosField') === 'true')
+    const [showPhobosAdvection, setShowPhobosAdvection] = useState(() => localStorage.getItem('rr_showPhobosAdvection') !== 'false')
+    // Convergence is a Phobos v1 concept (player-attraction field).
+    // ORBIT dropped it. The toggle below is only surfaced when at
+    // least one snapshot actually carries non-empty convergence data
+    // (i.e. the raid was recorded with legacy upstream Phobos).
+    const [showPhobosConvergence, setShowPhobosConvergence] = useState(() => localStorage.getItem('rr_showPhobosConvergence') !== 'false')
+    const [showPhobosZones, setShowPhobosZones] = useState(() => localStorage.getItem('rr_showPhobosZones') !== 'false')
+    const [phobosFieldData, setPhobosFieldData] = useState<any[]>([])
+    const [phobosFieldCollapsed, setPhobosFieldCollapsed] = useState(true)
+    const phobosFieldLayerRef = useRef<L.LayerGroup | null>(null)
+
+    // Per-main marker refs aligned with the squad-mains sidebar list,
+    // populated by the markers-render effect. The sidebar rows call
+    // openTooltip / closeTooltip on these to highlight the matching
+    // marker on the map when the user hovers a row.
+    const orbitMainObjectiveMarkersRef = useRef<L.CircleMarker[]>([])
+
+    // Phobos main objectives (ORBIT-only) — debug overlay. Per-squad
+    // list of 1-5 long-term goals (Kills / LootValue / Quest), rendered
+    // as numbered colour-coded markers when the user clicks a bot to
+    // select that squad. Click again on any bot → hide.
+    const [orbitMainObjectivesData, setOrbitMainObjectivesData] = useState<any[]>([])
+    const [selectedSquadForMains, setSelectedSquadForMains] = useState<number | null>(null)
+    const orbitMainObjectivesLayerRef = useRef<L.LayerGroup | null>(null)
+
+    // Mirror the snapshot array into a ref so the click handler (bound
+    // once inside the position-renderer effect, which does NOT depend on
+    // this data) reads the freshest value rather than a stale closure
+    // from the render where the array was still empty.
+    const orbitMainObjectivesDataRef = useRef<any[]>([])
+    useEffect(() => { orbitMainObjectivesDataRef.current = orbitMainObjectivesData }, [orbitMainObjectivesData])
+
+    // Squad membership is captured per snapshot (~30s). Two failure
+    // modes the naive `latest snapshot ≤ cursor` lookup handles badly:
+    //   1. Early raid (first ~30s): no snapshot exists at all because
+    //      SAIN brains haven't applied yet, so no squad has mains.
+    //   2. Dead bot / disbanded squad late in raid: the squad drops out
+    //      of all snapshots after the last member dies.
+    // Both helpers scan all snapshots — findSquadIdForPlayer ignores the
+    // cursor entirely (a bot's squad identity doesn't depend on cursor
+    // position), findLatestSquadEntry prefers ≤ cursor for an accurate
+    // completion-state render but falls back to any-time so the sidebar
+    // shows something useful instead of going blank.
+    const findSquadIdForPlayer = (playerId: string): number | null => {
+        const data = orbitMainObjectivesDataRef.current
+        for (let i = data.length - 1; i >= 0; i--) {
+            const snap = data[i]
+            const entry = (snap.squads || []).find((s: any) =>
+                s.memberProfileIds && s.memberProfileIds.includes(playerId))
+            if (entry) return Number(entry.squadId)
+        }
+        return null
+    }
+    const findLatestSquadEntry = (squadId: number, atTime: number): any => {
+        const data = orbitMainObjectivesDataRef.current
+        let best: any = null
+        let bestTime = -Infinity
+        for (const snap of data) {
+            if (snap.time > atTime) continue
+            const entry = (snap.squads || []).find((s: any) => Number(s.squadId) === squadId)
+            if (entry && snap.time > bestTime) { best = entry; bestTime = snap.time }
+        }
+        if (best) return best
+        // No snapshot ≤ cursor contains this squad. Most common cause:
+        // cursor sits in the first ~30s before SAIN has applied brains
+        // and any mains exist. Fall back to the EARLIEST future snapshot
+        // (first known state) — otherwise picking the latest would
+        // pre-spoil every main as 'completed' before the squad has even
+        // had a chance to start them.
+        let earliestFuture: any = null
+        let earliestTime = Infinity
+        for (const snap of data) {
+            if (snap.time <= atTime) continue
+            const entry = (snap.squads || []).find((s: any) => Number(s.squadId) === squadId)
+            if (entry && snap.time < earliestTime) { earliestFuture = entry; earliestTime = snap.time }
+        }
+        return earliestFuture
+    }
+    // SPT quest name lookup (zoneId → friendly title). Fetched once per
+    // app load. Used to resolve user-facing names on Phobos Quest POI
+    // tooltips + main objectives sidebar list (trigger IDs like
+    // "expl_zone_vremyan_case" are not human-friendly).
+    const [questNameMap, setQuestNameMap] = useState<Record<string, string>>({})
 
     // Animations section
     const [animationsCollapsed, setAnimationsCollapsed] = useState(true)
@@ -833,7 +948,28 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                             lootLine = `<br/><span style="color:#FACC15">\u{1F4E6} ${playerLoot.length} items</span> (\u20BD${totalValue.toLocaleString()})<br/><span style="font-size:10px;opacity:0.7">${itemList}${playerLoot.length > 3 ? '...' : ''}</span>`
                         }
                     }
-                    const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})${healthLine}${behaviorLine}${lootLine}`
+                    // Extract objective hint: when the bot's latest
+                    // Phobos objective is an Exfil POI, surface the
+                    // squad-wide ExtractRequested reason (loot ≥ Xk₽,
+                    // all mains done, raid time low) so the user can
+                    // see WHY the bot is extracting, not just where.
+                    let extractLine = ''
+                    if (botObjectiveData && botObjectiveData.length > 0) {
+                        let latestObj: any = null
+                        for (const o of botObjectiveData) {
+                            if (o.profileId !== playerId) continue
+                            const t = Number(o.time)
+                            if (t > timeEndLimit) continue
+                            if (!latestObj || t > Number(latestObj.time)) latestObj = o
+                        }
+                        if (latestObj && latestObj.category === 'Exfil') {
+                            const reason = latestObj.extractReason && String(latestObj.extractReason).trim().length > 0
+                                ? String(latestObj.extractReason).trim()
+                                : 'extract requested'
+                            extractLine = `<br/><span style="color:#60A5FA">\u{1F6AA} Extracting: ${reason}</span>`
+                        }
+                    }
+                    const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})${healthLine}${behaviorLine}${extractLine}${lootLine}`
                     const ringColor = behaviorCat && behaviorCat.key !== 'idle' && behaviorCat.key !== 'patrol' ? behaviorCat.color : undefined
                     const hpPct = (currentHealth != null && maxHealth != null && maxHealth > 0) ? Math.round((currentHealth / maxHealth) * 100) : undefined
                     const marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, markerOpacity, pmcIndexMap[playerId], tip, ringColor, hpPct)
@@ -862,6 +998,20 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             layer.on('mouseout', () => {
                 if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current)
                 focusTimeoutRef.current = setTimeout(() => setPlayerFocus(null), 100)
+            })
+            // ORBIT main objectives: click any bot marker to toggle
+            // the per-squad mains overlay. If THAT squad is already
+            // selected, click hides it. If a different squad's mains
+            // are showing, the click swaps to the new squad. If no
+            // squad's mains data exists for this bot (bot scav / boss
+            // / raider — they skip the system), the click is a no-op.
+            layer.on('click', () => {
+                // Scan all snapshots (not just ≤ timeEndLimit) so a dead
+                // bot's dot still resolves to its historic squad. See
+                // findSquadIdForPlayer for the why.
+                const sqId = findSquadIdForPlayer(playerId)
+                if (sqId == null) return
+                setSelectedSquadForMains(prev => prev === sqId ? null : sqId)
             })
         }
 
@@ -1367,6 +1517,21 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         localStorage.setItem('rr_showBotQuests', String(showBotQuests))
     }, [showBotQuests])
     useEffect(() => {
+        localStorage.setItem('rr_showBotObjectives', String(showBotObjectives))
+    }, [showBotObjectives])
+    useEffect(() => {
+        localStorage.setItem('rr_showPhobosField', String(showPhobosField))
+    }, [showPhobosField])
+    useEffect(() => {
+        localStorage.setItem('rr_showPhobosAdvection', String(showPhobosAdvection))
+    }, [showPhobosAdvection])
+    useEffect(() => {
+        localStorage.setItem('rr_showPhobosConvergence', String(showPhobosConvergence))
+    }, [showPhobosConvergence])
+    useEffect(() => {
+        localStorage.setItem('rr_showPhobosZones', String(showPhobosZones))
+    }, [showPhobosZones])
+    useEffect(() => {
         localStorage.setItem('rr_showHitFlash', String(showHitFlash))
     }, [showHitFlash])
 
@@ -1638,6 +1803,408 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             }
         }
     }, [MAP, mapIsReady, showBotQuests, botQuestData, timeEndLimit, raidData?.players, raidData?.kills, positions])
+
+    // Bot Objectives (legacy Phobos / ORBIT): always fetch data (panel
+    // visibility depends on data existing). Pulls from BOTH the legacy
+    // bot_objective table and the orbit_bot_objective table and merges.
+    // Only one is populated at runtime — the legacy fetch is harmless
+    // when no row exists and lets old raid replays keep rendering.
+    useEffect(() => {
+        if (botObjectiveData.length > 0) return
+        ;(async () => {
+            const [legacy, v2] = await Promise.all([
+                api.getRaidBotObjectives(raidId),
+                api.getRaidOrbitBotObjectives(raidId),
+            ])
+            const merged = [...(legacy || []), ...(v2 || [])]
+            if (merged.length > 0) {
+                setBotObjectiveData(merged)
+            }
+        })()
+    }, [raidId])
+
+    // Bot Objectives (Phobos): render destination markers on map (timeline-aware)
+    useEffect(() => {
+        if (!MAP || !mapIsReady) return
+
+        if (botObjectiveLayerRef.current) {
+            MAP.removeLayer(botObjectiveLayerRef.current)
+            botObjectiveLayerRef.current = null
+        }
+
+        if (!showBotObjectives || botObjectiveData.length === 0) return
+
+        const group = L.layerGroup()
+
+        // Latest objective per bot at current timeline position
+        const latestByBot: Record<string, any> = {}
+        for (const o of botObjectiveData) {
+            const t = Number(o.time)
+            if (t > timeEndLimit) continue
+            const prev = latestByBot[o.profileId]
+            if (!prev || t > Number(prev.time)) {
+                latestByBot[o.profileId] = o
+            }
+        }
+
+        // Category → icon + color (Phobos LocationCategory)
+        const categoryStyle: Record<string, { icon: string, color: string }> = {
+            'ContainerLoot': { icon: '\u{1F4E6}', color: '#FACC15' }, // package, yellow
+            'LooseLoot':     { icon: '\u{1F48E}', color: '#FBBF24' }, // gem, amber
+            'Quest':         { icon: '\u{1F4CB}', color: '#D946EF' }, // clipboard, fuchsia
+            'Synthetic':     { icon: '\u{1F500}', color: '#38BDF8' }, // shuffle, sky
+            'Exfil':         { icon: '\u{1F6AA}', color: '#2DD4BF' }, // door, teal
+        }
+
+        // Dead bots at current timeline
+        const deadBots = new Set<string>()
+        if (raidData?.kills) {
+            for (const k of raidData.kills) {
+                if (Number(k.time) <= timeEndLimit) deadBots.add(k.killedId)
+            }
+        }
+
+        for (const [profileId, o] of Object.entries(latestByBot)) {
+            if (o.status !== 'Moving') continue
+            if (deadBots.has(profileId)) continue
+            const x = Number(o.objectiveX)
+            const z = Number(o.objectiveZ)
+            if (x === 0 && z === 0) continue
+
+            const player = raidData?.players?.find(p => p.profileId === profileId)
+            const botName = player ? (player.name || profileId) : profileId
+            const style = categoryStyle[o.category] || { icon: '❓', color: '#94A3B8' }
+            const isLeader = o.isLeader === 1 || o.isLeader === true
+
+            const marker = L.circleMarker([z, x], {
+                radius: isLeader ? 7 : 5,
+                color: style.color,
+                weight: isLeader ? 3 : 2,
+                fillColor: style.color,
+                fillOpacity: 0.3,
+                interactive: true,
+            })
+            marker.bindTooltip(
+                `${style.icon} <strong>${botName}</strong>${isLeader ? ' ★' : ''}<br/><em>${o.category || 'Objective'}</em>`,
+                { direction: 'top', offset: [0, -8], className: 'player-tooltip player-tooltip-html' }
+            )
+            marker._rr_objective = true
+            group.addLayer(marker)
+
+            // Dashed line from bot's current position to the destination
+            const posData = positions as any
+            if (posData && typeof posData === 'object') {
+                const botPositions = posData[profileId]
+                if (Array.isArray(botPositions) && botPositions.length > 0) {
+                    let closest = botPositions[0]
+                    for (const pos of botPositions) {
+                        if (Number(pos.time) <= timeEndLimit && Number(pos.time) >= Number(closest.time)) {
+                            closest = pos
+                        }
+                    }
+                    if (closest) {
+                        const line = L.polyline(
+                            [[Number(closest.z), Number(closest.x)], [z, x]],
+                            { color: style.color, weight: 1, dashArray: '4 4', opacity: 0.5 }
+                        )
+                        line._rr_objective = true
+                        group.addLayer(line)
+                    }
+                }
+            }
+        }
+
+        group.addTo(MAP)
+        botObjectiveLayerRef.current = group
+
+        return () => {
+            if (botObjectiveLayerRef.current && MAP) {
+                MAP.removeLayer(botObjectiveLayerRef.current)
+                botObjectiveLayerRef.current = null
+            }
+        }
+    }, [MAP, mapIsReady, showBotObjectives, botObjectiveData, timeEndLimit, raidData?.players, raidData?.kills, positions])
+
+    // Phobos / ORBIT advection field: fetch snapshots once from both
+    // sources and merge. Same shape, just two independent tables — drop
+    // the upstream call when upstream support is removed.
+    useEffect(() => {
+        if (phobosFieldData.length > 0) return
+        ;(async () => {
+            const [legacy, v2] = await Promise.all([
+                api.getRaidPhobosField(raidId),
+                api.getRaidOrbitField(raidId),
+            ])
+            const data = [...(legacy || []), ...(v2 || [])]
+            if (data.length > 0) {
+                // advection/convergence/zones come back as JSON strings —
+                // parse them. convergence is empty for ORBIT raids
+                // (the v1-only player-attraction field) and populated
+                // for legacy v1 raids.
+                const parsed = data.map((s: any) => ({
+                    time: Number(s.time),
+                    gridCols: Number(s.gridCols),
+                    gridRows: Number(s.gridRows),
+                    worldMinX: Number(s.worldMinX),
+                    worldMinZ: Number(s.worldMinZ),
+                    cellSize: Number(s.cellSize),
+                    advection: typeof s.advection === 'string' ? JSON.parse(s.advection) : (s.advection || []),
+                    convergence: typeof s.convergence === 'string' ? JSON.parse(s.convergence) : (s.convergence || []),
+                    zones: typeof s.zones === 'string' ? JSON.parse(s.zones) : (s.zones || []),
+                }))
+                setPhobosFieldData(parsed)
+            }
+        })()
+    }, [raidId])
+
+    // Phobos advection field: render overlay (timeline-aware — picks the snapshot for the current time)
+    useEffect(() => {
+        if (!MAP || !mapIsReady) return
+
+        if (phobosFieldLayerRef.current) {
+            MAP.removeLayer(phobosFieldLayerRef.current)
+            phobosFieldLayerRef.current = null
+        }
+
+        if (!showPhobosField || phobosFieldData.length === 0) return
+
+        // Pick the latest snapshot at or before the current timeline position
+        let snap = phobosFieldData[0]
+        for (const s of phobosFieldData) {
+            if (s.time <= timeEndLimit) snap = s
+            else break
+        }
+        if (!snap) return
+
+        const group = L.layerGroup()
+        const { worldMinX, worldMinZ, cellSize } = snap
+
+        // Cell (cx,cy) → world center. Map plots as [z, x].
+        const cellCenter = (cx: number, cy: number): [number, number] => [
+            worldMinZ + (cy + 0.5) * cellSize,
+            worldMinX + (cx + 0.5) * cellSize,
+        ]
+
+        // Draw a force vector as an arrow (shaft + V-shaped head) from a cell center
+        const drawArrow = (cx: number, cy: number, fx: number, fz: number, color: string) => {
+            const mag = Math.sqrt(fx * fx + fz * fz)
+            if (mag < 0.01) return
+            const [cz, cxw] = cellCenter(cx, cy)
+            // Normalized direction (dz = z-axis, dx = x-axis), scaled to ~half a cell
+            const dz = fz / mag, dx = fx / mag
+            const scale = Math.min(mag, 1) * cellSize * 0.45
+            const ez = cz + dz * scale
+            const ex = cxw + dx * scale
+            // Arrowhead barbs: direction rotated ±150°, length ~35% of the arrow
+            const headLen = scale * 0.35
+            const rot = (a: number, b: number, ang: number): [number, number] => [
+                a * Math.cos(ang) - b * Math.sin(ang),
+                a * Math.sin(ang) + b * Math.cos(ang),
+            ]
+            const ang = (150 * Math.PI) / 180
+            const [b1z, b1x] = rot(dz, dx, ang)
+            const [b2z, b2x] = rot(dz, dx, -ang)
+            const shaft = L.polyline([[cz, cxw], [ez, ex]], { color, weight: 1.5, opacity: 0.75 })
+            shaft._rr_phobos = true
+            group.addLayer(shaft)
+            const head = L.polyline(
+                [[ez + b1z * headLen, ex + b1x * headLen], [ez, ex], [ez + b2z * headLen, ex + b2x * headLen]],
+                { color, weight: 1.5, opacity: 0.75 }
+            )
+            head._rr_phobos = true
+            group.addLayer(head)
+        }
+
+        // Advection field (static zones) — amber
+        if (showPhobosAdvection) {
+            for (const c of snap.advection) {
+                drawArrow(c.x, c.y, c.fx, c.fz, '#F59E0B')
+            }
+        }
+        // Convergence field (player attraction) — cyan. Legacy Phobos
+        // v1 only — ORBIT always emits an empty array. Safe to loop
+        // unconditionally; the toggle is hidden from the sidebar when
+        // no snapshot in the raid carries any convergence data.
+        if (showPhobosConvergence) {
+            for (const c of snap.convergence) {
+                drawArrow(c.x, c.y, c.fx, c.fz, '#22D3EE')
+            }
+        }
+
+        // Hot zones — green = attractor (positive force), red = repulsor (negative)
+        if (showPhobosZones)
+        for (const z of snap.zones) {
+            const [cz, cxw] = cellCenter(z.x, z.y)
+            const isAttractor = z.force >= 0
+            const color = isAttractor ? '#22C55E' : '#EF4444'
+            const circle = L.circle([cz, cxw], {
+                radius: z.radius,
+                color,
+                weight: 2,
+                fillColor: color,
+                fillOpacity: 0.08,
+                dashArray: '4 4',
+            })
+            circle.bindTooltip(
+                `${isAttractor ? '🟢 Attractor' : '🔴 Repulsor'}<br/>force: ${z.force.toFixed(2)}, radius: ${z.radius.toFixed(0)}`,
+                { direction: 'top', className: 'player-tooltip player-tooltip-html' }
+            )
+            circle._rr_phobos = true
+            group.addLayer(circle)
+        }
+
+        group.addTo(MAP)
+        phobosFieldLayerRef.current = group
+
+        return () => {
+            if (phobosFieldLayerRef.current && MAP) {
+                MAP.removeLayer(phobosFieldLayerRef.current)
+                phobosFieldLayerRef.current = null
+            }
+        }
+    }, [MAP, mapIsReady, showPhobosField, showPhobosAdvection, showPhobosConvergence, showPhobosZones, phobosFieldData, timeEndLimit])
+
+    // (Phobos POIs / squad-home / squad-main-force debug overlays were
+    // removed — they served their purpose during integration validation
+    // but bloated the DB and cluttered the sidebar without informing the
+    // user-facing playback. The on-map main-objective markers + per-bot
+    // objective tooltip stay; everything else under "Phobos" is gone.)
+
+    // ORBIT main objectives: fetch once per raid. Each DB row is one
+    // 30s snapshot of every squad's main-objective list; we keep them
+    // separate so the viz can replay completion progress over time.
+    useEffect(() => {
+        if (orbitMainObjectivesData.length > 0) return
+        ;(async () => {
+            const data = await api.getRaidOrbitMainObjectives(raidId)
+            if (data && data.length > 0) {
+                const parsed = data.map((row: any) => ({
+                    time: Number(row.time) || 0,
+                    squads: typeof row.squads === 'string' ? JSON.parse(row.squads) : (row.squads || []),
+                }))
+                setOrbitMainObjectivesData(parsed)
+            }
+        })()
+    }, [raidId])
+
+    // Quest name map: fetched once per page load (server side caches it
+    // too — re-fetches are cheap). Independent of the active raid since
+    // the SPT quest db is global.
+    useEffect(() => {
+        if (Object.keys(questNameMap).length > 0) return
+        ;(async () => {
+            const map = await api.getQuestNames()
+            if (map && Object.keys(map).length > 0) setQuestNameMap(map)
+        })()
+    }, [])
+
+    // ORBIT main objectives: render the selected squad's mains as
+    // numbered colour-coded markers + a thin connecting polyline. Only
+    // renders when selectedSquadForMains is set (set by clicking a bot
+    // marker — handled in the player-marker click effect below).
+    useEffect(() => {
+        if (!MAP || !mapIsReady) return
+
+        if (orbitMainObjectivesLayerRef.current) {
+            MAP.removeLayer(orbitMainObjectivesLayerRef.current)
+            orbitMainObjectivesLayerRef.current = null
+        }
+
+        if (selectedSquadForMains == null || orbitMainObjectivesData.length === 0) return
+
+        // Prefer the latest snapshot ≤ timeEndLimit (timeline-accurate
+        // completion flags), fall back to the freshest any-time entry
+        // for disbanded squads so the markers still render.
+        const squadEntry = findLatestSquadEntry(selectedSquadForMains, timeEndLimit)
+        if (!squadEntry || !squadEntry.mainObjectives || squadEntry.mainObjectives.length === 0) return
+
+        const group = L.layerGroup()
+        // Rebuild marker refs alongside the group so the sidebar list
+        // can call openTooltip on a hovered row's marker.
+        orbitMainObjectiveMarkersRef.current = []
+        const colorByType: Record<string, string> = {
+            Kills: '#EF4444',     // red
+            LootValue: '#F59E0B', // gold
+            Quest: '#A855F7',     // purple
+        }
+        // Single-glyph identifier inside each marker — no number,
+        // because the squad picks mains opportunistically (closest
+        // pending). A number would imply an execution order that
+        // doesn't exist.
+        const glyphByType: Record<string, string> = {
+            Kills: 'K',
+            LootValue: '$',
+            Quest: '?',
+        }
+
+        squadEntry.mainObjectives.forEach((m: any) => {
+            const baseColor = colorByType[m.type] || '#888'
+            // Four visual states: completed (grey), interrupted
+            // (amber halo — LootValue paused by combat or out-of-cell),
+            // in progress (white halo + thicker), pending (regular).
+            // Quest has no started/interrupted state — it transitions
+            // straight from pending to completed at trigger touch.
+            const isStarted = !m.completed && (
+                (m.type === 'Kills' && m.killsRoamStartedAt > 0) ||
+                (m.type === 'LootValue' && m.lootValueEnteredAt > 0)
+            )
+            const isInterrupted = isStarted && m.type === 'LootValue' && m.lootValueInterrupted === true
+            const fillColor = m.completed ? '#6B7280' : baseColor
+            const ringColor = m.completed
+                ? '#4B5563'
+                : isInterrupted ? '#F59E0B'        // amber — interrupted
+                : isStarted ? '#FFFFFF'             // white — in progress
+                : baseColor                          // pending
+            const ringWeight = isStarted ? 4 : 2.5
+            const glyph = m.completed ? '✓' : (glyphByType[m.type] || '●')
+            const marker = L.circleMarker([m.z, m.x], {
+                radius: isStarted ? 13 : 11,
+                color: ringColor,
+                weight: ringWeight,
+                fillColor: fillColor,
+                fillOpacity: 0.85,
+                dashArray: isInterrupted ? '6 4' : undefined,
+            })
+            const labelIcon = L.divIcon({
+                className: 'rr-main-objective-label',
+                html: `<div style="color:#fff;font-size:11px;font-weight:bold;text-shadow:0 0 3px rgba(0,0,0,0.9);text-align:center;line-height:22px;width:22px;">${glyph}</div>`,
+                iconSize: [22, 22],
+                iconAnchor: [11, 11],
+            })
+            const label = L.marker([m.z, m.x], { icon: labelIcon, interactive: false })
+            let tipHtml = `<strong>${m.type}</strong>`
+            if (m.type === 'Quest') {
+                const friendly = resolveQuestName(m.questTriggerId || m.questTitle, questNameMap)
+                tipHtml += `<br/><span style="opacity:0.85">${friendly || m.questTitle || m.questTriggerId || ''}</span>`
+            }
+            if (m.type === 'Kills' && m.killsRoamTargetDuration > 0) {
+                tipHtml += `<br/><span style="opacity:0.7;font-size:10px">Roam ${m.killsRoamTargetDuration.toFixed(0)}s</span>`
+            }
+            if (m.type === 'LootValue' && m.lootValueTotal > 0) {
+                tipHtml += `<br/><span style="opacity:0.7;font-size:10px">₽ ${Math.round(m.lootValueTotal).toLocaleString()}</span>`
+            }
+            const stateLabel = m.completed
+                ? '✓ completed'
+                : isInterrupted ? '⏸ interrupted (combat or out of cell)'
+                : isStarted ? '◉ in progress (started)'
+                : 'pending'
+            tipHtml += `<br/><span style="opacity:0.7;font-size:10px">${stateLabel}</span>`
+            marker.bindTooltip(tipHtml, { direction: 'top', className: 'player-tooltip player-tooltip-html' })
+            group.addLayer(marker)
+            group.addLayer(label)
+            orbitMainObjectiveMarkersRef.current.push(marker)
+        })
+
+        group.addTo(MAP)
+        orbitMainObjectivesLayerRef.current = group
+
+        return () => {
+            if (orbitMainObjectivesLayerRef.current && MAP) {
+                MAP.removeLayer(orbitMainObjectivesLayerRef.current)
+                orbitMainObjectivesLayerRef.current = null
+            }
+        }
+    }, [MAP, mapIsReady, selectedSquadForMains, orbitMainObjectivesData, timeEndLimit, questNameMap])
 
     // Loot float animations: show floating text when timeline crosses a loot event
     // Uses a ref-based approach to avoid useEffect cleanup killing the animation on re-render
@@ -1959,7 +2526,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             const layer = m._layers[key];
         
             // Skip layers managed by other overlays (quests, loose loot, grenades, etc.)
-            if (layer._rr_quest || layer._rr_looseLoot || layer._rr_grenade) continue;
+            if (layer._rr_quest || layer._rr_looseLoot || layer._rr_grenade || layer._rr_objective || layer._rr_phobos) continue;
 
             // Remove polylines without eventType or not being ballisticsLine, circles, and special bot markers
             const isSpecialBotMarker = layer instanceof L.Marker && layer.options?.icon?.options?.className === 'special-bot-marker';
@@ -2586,6 +3153,254 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                         </div>
                                     </div>
                                 )}
+                            </div>
+                        )}
+
+                        {/* ── Bot Objectives Section (Phobos) ── */}
+                        {botObjectiveData.length > 0 && (
+                            <div className="mt-4" style={{ borderTop: '1px solid rgba(154, 136, 102, 0.3)', paddingTop: '8px' }}>
+                                <div
+                                    className="flex items-center cursor-pointer"
+                                    style={{ fontSize: '14px' }}
+                                    onClick={() => setBotObjectiveCollapsed(!botObjectiveCollapsed)}
+                                >
+                                    <span style={{ marginRight: '4px', fontSize: '9px' }}>{botObjectiveCollapsed ? '▶' : '▼'}</span>
+                                    <strong>Bot Objectives</strong>
+                                </div>
+                                {!botObjectiveCollapsed && (
+                                    <div style={{ marginTop: '6px', fontSize: '13px' }}>
+                                        <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '6px' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={showBotObjectives}
+                                                onChange={() => setShowBotObjectives(!showBotObjectives)}
+                                                style={{ accentColor: '#9a8866' }}
+                                            />
+                                            <span>Show on map</span>
+                                        </label>
+                                        <div style={{ fontSize: '11px', opacity: 0.7, marginBottom: '4px' }}>
+                                            {botObjectiveData.length} objective events recorded (Phobos)
+                                        </div>
+                                        <div style={{ fontSize: '11px', marginBottom: '4px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                            <span style={{ color: '#FACC15' }}>{'●'} Container</span>
+                                            <span style={{ color: '#FBBF24' }}>{'●'} Loose Loot</span>
+                                            <span style={{ color: '#D946EF' }}>{'●'} Quest</span>
+                                            <span style={{ color: '#38BDF8' }}>{'●'} Synthetic</span>
+                                            <span style={{ color: '#2DD4BF' }}>{'●'} Exfil</span>
+                                        </div>
+                                        <div style={{ maxHeight: '250px', overflowY: 'auto', borderTop: '1px solid rgba(154,136,102,0.2)', paddingTop: '4px' }}>
+                                            {(() => {
+                                                const latestByBot: Record<string, any> = {}
+                                                for (const o of botObjectiveData) {
+                                                    if (Number(o.time) > timeEndLimit) continue
+                                                    const prev = latestByBot[o.profileId]
+                                                    if (!prev || Number(o.time) > Number(prev.time)) latestByBot[o.profileId] = o
+                                                }
+                                                const deadOrGone = new Set<string>()
+                                                if (raidData?.kills) {
+                                                    for (const k of raidData.kills) {
+                                                        if (Number(k.time) <= timeEndLimit) deadOrGone.add(k.killedId)
+                                                    }
+                                                }
+                                                const catColor: Record<string, string> = {
+                                                    'ContainerLoot': '#FACC15', 'LooseLoot': '#FBBF24',
+                                                    'Quest': '#D946EF', 'Synthetic': '#38BDF8', 'Exfil': '#2DD4BF',
+                                                }
+                                                return Object.entries(latestByBot)
+                                                    .filter(([profileId, o]) => o.status === 'Moving' && !deadOrGone.has(profileId))
+                                                    .map(([profileId, o]) => {
+                                                        const player = raidData?.players?.find(p => p.profileId === profileId)
+                                                        const botName = player?.name || profileId.slice(0, 8)
+                                                        const isLeader = o.isLeader === 1 || o.isLeader === true
+                                                        return (
+                                                            <div key={profileId} style={{ padding: '2px 0', borderBottom: '1px solid rgba(154,136,102,0.1)' }}>
+                                                                <div style={{ fontSize: '12px' }}>
+                                                                    <strong>{botName}</strong>{isLeader ? ' ★' : ''}
+                                                                    <span style={{ color: catColor[o.category] || '#94A3B8', marginLeft: '4px', fontSize: '10px' }}>
+                                                                        {o.category || 'Objective'}
+                                                                    </span>
+                                                                </div>
+                                                            </div>
+                                                        )
+                                                    })
+                                            })()}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* ── Phobos Advection Field Section ── */}
+                        {phobosFieldData.length > 0 && (
+                            <div className="mt-4" style={{ borderTop: '1px solid rgba(154, 136, 102, 0.3)', paddingTop: '8px' }}>
+                                <div
+                                    className="flex items-center cursor-pointer"
+                                    style={{ fontSize: '14px' }}
+                                    onClick={() => setPhobosFieldCollapsed(!phobosFieldCollapsed)}
+                                >
+                                    <span style={{ marginRight: '4px', fontSize: '9px' }}>{phobosFieldCollapsed ? '▶' : '▼'}</span>
+                                    <strong>Phobos Field</strong>
+                                </div>
+                                {!phobosFieldCollapsed && (
+                                    <div style={{ marginTop: '6px', fontSize: '13px' }}>
+                                        <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '6px' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={showPhobosField}
+                                                onChange={() => setShowPhobosField(!showPhobosField)}
+                                                style={{ accentColor: '#9a8866' }}
+                                            />
+                                            <span>Show on map</span>
+                                        </label>
+                                        <div style={{ fontSize: '11px', opacity: 0.7, marginBottom: '4px' }}>
+                                            {phobosFieldData.length} field snapshots recorded
+                                        </div>
+                                        <div style={{ marginLeft: '4px', opacity: showPhobosField ? 1 : 0.4, pointerEvents: showPhobosField ? 'auto' : 'none' }}>
+                                            <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '4px', fontSize: '12px' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={showPhobosAdvection}
+                                                    onChange={() => setShowPhobosAdvection(!showPhobosAdvection)}
+                                                    style={{ accentColor: '#F59E0B' }}
+                                                />
+                                                <span style={{ color: '#F59E0B' }}>{'➜'} Advection (zones)</span>
+                                            </label>
+                                            {/* Convergence toggle is hidden for ORBIT raids (always-empty convergence). Surface only when a v1 snapshot carries data. */}
+                                            {phobosFieldData.some((s: any) => Array.isArray(s.convergence) && s.convergence.length > 0) && (
+                                                <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '4px', fontSize: '12px' }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={showPhobosConvergence}
+                                                        onChange={() => setShowPhobosConvergence(!showPhobosConvergence)}
+                                                        style={{ accentColor: '#22D3EE' }}
+                                                    />
+                                                    <span style={{ color: '#22D3EE' }}>{'➜'} Convergence (players)</span>
+                                                </label>
+                                            )}
+                                            <label className="flex items-center gap-2 cursor-pointer" style={{ marginBottom: '4px', fontSize: '12px' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={showPhobosZones}
+                                                    onChange={() => setShowPhobosZones(!showPhobosZones)}
+                                                    style={{ accentColor: '#9a8866' }}
+                                                />
+                                                <span><span style={{ color: '#22C55E' }}>{'◯'}</span>/<span style={{ color: '#EF4444' }}>{'◯'}</span> Zones (attractor/repulsor)</span>
+                                            </label>
+                                        </div>
+                                        <div style={{ fontSize: '10px', opacity: 0.6, marginTop: '4px' }}>
+                                            Field shown is the snapshot closest to the current timeline position.
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
+                        {/* ── ORBIT Main Objectives (click bot to view) ── */}
+                        {orbitMainObjectivesData.length > 0 && (
+                            <div className="mt-4" style={{ borderTop: '1px solid rgba(154, 136, 102, 0.3)', paddingTop: '8px' }}>
+                                <div style={{ fontSize: '14px', marginBottom: '6px' }}>
+                                    <strong>ORBIT Main Objectives</strong>
+                                    {selectedSquadForMains != null && (() => {
+                                        // Resolve the selected squad's leader (assumed first
+                                        // member in memberProfileIds — that's how
+                                        // ORBIT.cs serialises Squad.Members and the
+                                        // leader is the first agent added). Render their
+                                        // colour dot + nickname instead of an opaque
+                                        // squad number.
+                                        const sq = findLatestSquadEntry(selectedSquadForMains, timeEndLimit)
+                                        const leaderPid = sq?.memberProfileIds?.[0]
+                                        const leaderIdx = leaderPid ? raidData.players.findIndex((p: any) => p.profileId === leaderPid) : -1
+                                        const leaderPlayer = leaderIdx >= 0 ? raidData.players[leaderIdx] : null
+                                        const leaderColor = leaderPlayer
+                                            ? (calculatedPlayerInfo[leaderPid!]?.pickedColor || getPlayerColor(leaderPlayer, leaderIdx))
+                                            : '#999'
+                                        const leaderName = leaderPlayer?.name || `Squad #${selectedSquadForMains}`
+                                        return (
+                                            <span style={{ marginLeft: '8px', fontSize: '12px', opacity: 0.9 }}>
+                                                <span style={{ color: leaderColor, fontSize: '14px', verticalAlign: 'middle' }}>●</span>{' '}
+                                                <span style={{ verticalAlign: 'middle' }}>{leaderName}</span>{' '}
+                                                <button
+                                                    onClick={() => setSelectedSquadForMains(null)}
+                                                    style={{ marginLeft: '4px', fontSize: '10px', padding: '1px 4px', background: 'rgba(154,136,102,0.3)', border: 'none', cursor: 'pointer' }}
+                                                >hide</button>
+                                            </span>
+                                        )
+                                    })()}
+                                </div>
+                                <div style={{ fontSize: '11px', opacity: 0.7, marginBottom: '4px' }}>
+                                    {selectedSquadForMains == null
+                                        ? 'Click any bot dot on the map to show their squad\'s main objectives sequence.'
+                                        : 'Click another bot to switch squad, click the same bot again to hide.'}
+                                </div>
+                                <div style={{ fontSize: '11px', marginBottom: '4px', display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                                    <span style={{ color: '#EF4444' }}>{'●'} Kills</span>
+                                    <span style={{ color: '#F59E0B' }}>{'●'} LootValue</span>
+                                    <span style={{ color: '#A855F7' }}>{'●'} Quest</span>
+                                    <span style={{ color: '#6B7280' }}>{'●'} Completed</span>
+                                </div>
+                                {/* Per-squad mains list — only when a squad is selected. Each
+                                    row shows the type + per-type detail (quest name, loot
+                                    value in roubles, Kills roam-target duration). */}
+                                {selectedSquadForMains != null && (() => {
+                                    const sq = findLatestSquadEntry(selectedSquadForMains, timeEndLimit)
+                                    if (!sq || !sq.mainObjectives) return null
+                                    const colorByType: Record<string, string> = { Kills: '#EF4444', LootValue: '#F59E0B', Quest: '#A855F7' }
+                                    return (
+                                        <div style={{ marginTop: '6px', borderTop: '1px dashed rgba(154,136,102,0.3)', paddingTop: '6px' }}>
+                                            {sq.mainObjectives.map((m: any, idx: number) => {
+                                                const baseColor = colorByType[m.type] || '#888'
+                                                const isStarted = !m.completed && (
+                                                    (m.type === 'Kills' && m.killsRoamStartedAt > 0) ||
+                                                    (m.type === 'LootValue' && m.lootValueEnteredAt > 0)
+                                                )
+                                                const isInterrupted = isStarted && m.type === 'LootValue' && m.lootValueInterrupted === true
+                                                const stateGlyph = m.completed ? '✓' : (isInterrupted ? '⏸' : (isStarted ? '◉' : '○'))
+                                                const stateColor = m.completed ? '#6B7280' : (isInterrupted ? '#F59E0B' : (isStarted ? '#fff' : baseColor))
+                                                let detail = ''
+                                                if (m.type === 'Quest') {
+                                                    const friendly = resolveQuestName(m.questTriggerId || m.questTitle, questNameMap)
+                                                    detail = friendly || m.questTitle || m.questTriggerId || '(no title)'
+                                                } else if (m.type === 'LootValue') {
+                                                    detail = m.lootValueTotal > 0
+                                                        ? `₽ ${Math.round(m.lootValueTotal).toLocaleString()}`
+                                                        : '(no value)'
+                                                } else if (m.type === 'Kills') {
+                                                    detail = `${Math.round(m.killsRoamTargetDuration || 0)}s in zone`
+                                                }
+                                                return (
+                                                    <div
+                                                        key={idx}
+                                                        style={{
+                                                            display: 'flex', alignItems: 'center', gap: '6px',
+                                                            padding: '2px 4px', fontSize: '11px',
+                                                            opacity: m.completed ? 0.5 : 1,
+                                                            textDecoration: m.completed ? 'line-through' : 'none',
+                                                            cursor: 'pointer',
+                                                            borderRadius: '2px',
+                                                        }}
+                                                        onMouseEnter={(ev) => {
+                                                            // Highlight the matching marker on the
+                                                            // map: open its tooltip so the user
+                                                            // can see exactly where the main is.
+                                                            const marker = orbitMainObjectiveMarkersRef.current[idx]
+                                                            marker?.openTooltip()
+                                                            ;(ev.currentTarget as HTMLDivElement).style.background = 'rgba(154,136,102,0.18)'
+                                                        }}
+                                                        onMouseLeave={(ev) => {
+                                                            const marker = orbitMainObjectiveMarkersRef.current[idx]
+                                                            marker?.closeTooltip()
+                                                            ;(ev.currentTarget as HTMLDivElement).style.background = 'transparent'
+                                                        }}
+                                                    >
+                                                        <span style={{ color: stateColor, fontWeight: 'bold' }}>{stateGlyph}</span>
+                                                        <span style={{ color: baseColor, minWidth: '64px' }}>{m.type}</span>
+                                                        <span style={{ opacity: 0.85 }}>{detail}</span>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    )
+                                })()}
                             </div>
                         )}
 

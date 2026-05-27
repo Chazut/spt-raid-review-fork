@@ -184,4 +184,154 @@ namespace RAID_REVIEW
         public float objectiveY { get; set; }
         public float objectiveZ { get; set; }
     }
+
+    public class TrackingBotObjective
+    {
+        public string sessionId { get; set; }
+        public string profileId { get; set; }
+        public long time { get; set; }
+        public string status { get; set; }
+        public string category { get; set; }
+        public bool isLeader { get; set; }
+        public float objectiveX { get; set; }
+        public float objectiveY { get; set; }
+        public float objectiveZ { get; set; }
+    }
+
+    public class TrackingPhobosField
+    {
+        public string sessionId { get; set; }
+        public long time { get; set; }
+        public int gridCols { get; set; }
+        public int gridRows { get; set; }
+        public float worldMinX { get; set; }
+        public float worldMinZ { get; set; }
+        public float cellSize { get; set; }
+        public List<TrackingPhobosCell> advection { get; set; }
+        public List<TrackingPhobosCell> convergence { get; set; }
+        public List<TrackingPhobosZone> zones { get; set; }
+    }
+
+    public class TrackingPhobosCell
+    {
+        public int x { get; set; }
+        public int y { get; set; }
+        public float fx { get; set; }
+        public float fz { get; set; }
+    }
+
+    public class TrackingPhobosZone
+    {
+        public int x { get; set; }
+        public int y { get; set; }
+        public float radius { get; set; }
+        public float force { get; set; }
+        public float decay { get; set; }
+    }
+
+    // ────────────────────────────────────────────────────────────────────
+    // ORBIT tracking models. Kept fully independent from the legacy
+    // TrackingPhobos* types above — different mod, different telemetry
+    // packets, different DB tables.
+    // ────────────────────────────────────────────────────────────────────
+
+    public class TrackingOrbitBotObjective
+    {
+        public string sessionId { get; set; }
+        public string profileId { get; set; }
+        public long time { get; set; }
+        public string status { get; set; }
+        public string category { get; set; }
+        public bool isLeader { get; set; }
+        public float objectiveX { get; set; }
+        public float objectiveY { get; set; }
+        public float objectiveZ { get; set; }
+        // Non-empty when the squad has flipped ExtractRequested. Mirrors
+        // Squad.ExtractRequestedReason — a short human-readable label like
+        // 'loot ≥ 500k₽' / 'all mains done' / 'raid time low'. Used by the
+        // bot tooltip when the objective is Extract.
+        public string extractReason { get; set; }
+    }
+
+    public class TrackingOrbitField
+    {
+        public string sessionId { get; set; }
+        public long time { get; set; }
+        public int gridCols { get; set; }
+        public int gridRows { get; set; }
+        public float worldMinX { get; set; }
+        public float worldMinZ { get; set; }
+        public float cellSize { get; set; }
+        public List<TrackingOrbitCell> advection { get; set; }
+        public List<TrackingOrbitZone> zones { get; set; }
+    }
+
+    public class TrackingOrbitCell
+    {
+        public int x { get; set; }
+        public int y { get; set; }
+        public float fx { get; set; }
+        public float fz { get; set; }
+    }
+
+    public class TrackingOrbitZone
+    {
+        public int x { get; set; }
+        public int y { get; set; }
+        public float radius { get; set; }
+        public float force { get; set; }
+        public float decay { get; set; }
+    }
+
+    /// <summary>
+    /// Periodic snapshot of every squad's main-objective list. Drives the
+    /// raid-review "click a bot → show this squad's main objectives"
+    /// overlay. Empty squads (bot scavs / bosses / raiders / goons that
+    /// skip the main-objectives system) aren't included.
+    /// </summary>
+    public class TrackingOrbitMainObjectives
+    {
+        public string sessionId { get; set; }
+        public long time { get; set; }
+        public List<TrackingOrbitSquadMainObjectives> squads { get; set; }
+    }
+
+    public class TrackingOrbitSquadMainObjectives
+    {
+        public int squadId { get; set; }
+        // ProfileIds of every member — frontend matches a clicked bot's
+        // ProfileId against these lists to find their squad.
+        public List<string> memberProfileIds { get; set; }
+        public List<TrackingOrbitMainObjective> mainObjectives { get; set; }
+    }
+
+    public class TrackingOrbitMainObjective
+    {
+        public string type { get; set; } // "Kills" | "LootValue" | "Quest"
+        public int cellX { get; set; }
+        public int cellY { get; set; }
+        public float x { get; set; }
+        public float y { get; set; }
+        public float z { get; set; }
+        public bool completed { get; set; }
+        // Kills-type extras (0/0 for non-Kills). killsRoamStartedAt > 0
+        // means the squad entered roam phase ("started" for the viz).
+        public float killsRoamStartedAt { get; set; }
+        public float killsRoamTargetDuration { get; set; }
+        // LootValue-type extras (0 for non-LootValue). lootValueEnteredAt > 0
+        // means a member has entered the anchor cell. lootValueTotal is the
+        // precomputed sum of handbook prices for every item in every
+        // Container + LooseLoot waypoint of the cell, captured at squad
+        // creation — static throughout the raid.
+        public float lootValueEnteredAt { get; set; }
+        public float lootValueTotal { get; set; }
+        // True when the squad has entered the cell but is currently paused
+        // (combat broke out OR no member is in the cell right now). Goes
+        // back to false when engagement resumes. Drives the raid-review
+        // "interrupted" visual on the main marker.
+        public bool lootValueInterrupted { get; set; }
+        // Quest-type extras (null for non-Quest)
+        public string questTriggerId { get; set; }
+        public string questTitle { get; set; }
+    }
 }
