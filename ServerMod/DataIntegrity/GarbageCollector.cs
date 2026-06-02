@@ -86,12 +86,33 @@ public class GarbageCollector
 
     private async Task DeleteRaidDataAsync(string raidId)
     {
-        // Delete child tables first, then raid (parent) last — foreign keys enforce this order
-        foreach (var table in new[] { "kills", "looting", "player", "player_status", "ballistic", "loose_loot", "player_inventory", "bot_quest", "bot_objective", "phobos_field", "orbit_field", "orbit_bot_objective", "orbit_main_objectives", "raid" })
+        var tables = new[] { "kills", "looting", "player", "player_status", "ballistic", "loose_loot", "player_inventory", "bot_quest", "bot_objective", "phobos_field", "orbit_field", "orbit_bot_objective", "orbit_main_objectives", "raid" };
+
+        // FK enforcement off during GC: legacy DBs can carry orphan rows
+        // in tables that were dropped/renamed across past migrations, and
+        // those would block delete on commit otherwise. PRAGMA foreign_keys
+        // is a connection-level toggle and is a no-op inside a transaction.
+        await _db.ExecuteAsync("PRAGMA foreign_keys = OFF");
+        try
         {
-            await _db.ExecuteAsync($"DELETE FROM {table} WHERE raidId = $raidId",
-                ("$raidId", raidId));
+            foreach (var table in tables)
+            {
+                try
+                {
+                    await _db.ExecuteAsync($"DELETE FROM {table} WHERE raidId = $raidId",
+                        ("$raidId", raidId));
+                }
+                catch (Exception ex)
+                {
+                    _logger.Warn($"Failed to clean {table} for raid {raidId}: {ex.Message}");
+                }
+            }
         }
+        finally
+        {
+            await _db.ExecuteAsync("PRAGMA foreign_keys = ON");
+        }
+
         _fileService.DeleteFile("positions", "", "", $"{raidId}_positions");
         _fileService.DeleteFile("positions", "", "", $"{raidId}_{ActiveVersion}_positions.json");
     }
