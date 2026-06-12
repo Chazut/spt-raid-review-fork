@@ -73,10 +73,41 @@ public class DatabaseService : IDisposable
         Directory.CreateDirectory(dataFolder);
         _dbPath = Path.Combine(dataFolder, "raid_review_mod.db");
 
-        _connection = new SqliteConnection($"Data Source={_dbPath}");
+        // Connection string with pooling so per-call connections in
+        // ExecuteAsync / QueryAsync get reused from the pool instead of
+        // re-opening the file each time. Cache=Shared lets the same
+        // in-memory page cache be shared across pooled connections.
+        _connectionString = $"Data Source={_dbPath};Pooling=True;Cache=Shared";
+        _connection = new SqliteConnection(_connectionString);
         await _connection.OpenAsync();
 
+        // WAL mode allows one writer + many concurrent readers without
+        // blocking on the same write lock. busy_timeout makes any caller
+        // wait up to 5s for the lock instead of erroring instantly, which
+        // is what was starving the Kestrel thread pool: every concurrent
+        // ws packet handler was serialising through the single shared
+        // connection's exclusive write lock.
+        await ExecuteOnAsync(_connection, "PRAGMA journal_mode = WAL;");
+        await ExecuteOnAsync(_connection, "PRAGMA busy_timeout = 5000;");
+        await ExecuteOnAsync(_connection, "PRAGMA synchronous = NORMAL;");
+        // temp_store = MEMORY keeps SQLite's transient indexes, sort scratch and intermediate result sets
+        // off the physical disk and in process RAM. Reported as a meaningful speedup on slow / write-through
+        // RAID arrays (Krelsis.net, Discord) where every disk write is a synchronous round-trip — moving
+        // the throwaway temp data out of that path takes a significant chunk of small writes off the I/O
+        // queue. Costs a small amount of RAM (typically a few hundred KB) and zero risk: the data is
+        // by definition temporary and doesn't survive a transaction commit.
+        await ExecuteOnAsync(_connection, "PRAGMA temp_store = MEMORY;");
+
         await RunMigrationsAsync();
+    }
+
+    private string _connectionString = string.Empty;
+
+    private static async Task ExecuteOnAsync(SqliteConnection conn, string sql)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        await cmd.ExecuteNonQueryAsync();
     }
 
     public SqliteConnection Connection => _connection ?? throw new InvalidOperationException("Database not initialized.");
@@ -451,16 +482,51 @@ public class DatabaseService : IDisposable
 
     public async Task ExecuteAsync(string sql, params (string name, object? value)[] parameters)
     {
-        using var cmd = _connection!.CreateCommand();
+        // Per-call connection from the pool: previously every WS packet
+        // handler was contending on the single shared _connection, which
+        // serialised every DB write behind SQLite's exclusive write lock
+        // and starved the Kestrel thread pool. With pooling + WAL mode
+        // each handler grabs its own connection, runs its statement, and
+        // releases — the pool reuses opened handles so it's cheap.
+        using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         foreach (var (name, value) in parameters)
             cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync();
     }
 
+    /// <summary>
+    /// Bulk INSERT helper: wraps N executions in a single transaction so
+    /// the per-row fsync cost collapses into one. Used by LOOSE_LOOT
+    /// which can land hundreds of items per packet — without batching,
+    /// each INSERT acquires the write lock + fsyncs the journal, killing
+    /// the thread pool under load.
+    /// </summary>
+    public async Task ExecuteBatchAsync(string sql, IEnumerable<(string name, object? value)[]> parameterSets)
+    {
+        using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync();
+        using var tx = (SqliteTransaction)await conn.BeginTransactionAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = sql;
+        foreach (var paramSet in parameterSets)
+        {
+            cmd.Parameters.Clear();
+            foreach (var (name, value) in paramSet)
+                cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
+            await cmd.ExecuteNonQueryAsync();
+        }
+        await tx.CommitAsync();
+    }
+
     public async Task<List<Dictionary<string, object?>>> QueryAsync(string sql, params (string name, object? value)[] parameters)
     {
-        using var cmd = _connection!.CreateCommand();
+        using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         foreach (var (name, value) in parameters)
             cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);

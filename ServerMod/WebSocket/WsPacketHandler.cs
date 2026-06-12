@@ -248,7 +248,7 @@ public class WsPacketHandler
                     var filename = $"{raidId}_positions";
                     var keys = ExtractKeysLine(payload);
                     var values = ExtractValuesLine(payload);
-                    _fileService.WriteLineToFile("positions", "", "", filename, keys + "\n", values + "\n");
+                    await _fileService.WriteLineToFileAsync("positions", "", "", filename, keys + "\n", values + "\n");
                     break;
                 }
 
@@ -276,11 +276,15 @@ public class WsPacketHandler
                     if (raidId == null) break;
                     if (payload.TryGetProperty("items", out var itemsArr) && itemsArr.ValueKind == JsonValueKind.Array)
                     {
+                        // Batch all inserts into one transaction — a raid
+                        // can ship hundreds of loose loot items in a
+                        // single packet and one-fsync-per-insert was a
+                        // major write-lock contention source.
+                        var batch = new List<(string name, object? value)[]>();
                         foreach (var item in itemsArr.EnumerateArray())
                         {
-                            await _db.ExecuteAsync(
-                                @"INSERT OR IGNORE INTO loose_loot (raidId, itemId, templateId, itemName, price, qty, x, y, z, inContainer, containerName)
-                                  VALUES ($raidId, $itemId, $templateId, $itemName, $price, $qty, $x, $y, $z, $inContainer, $containerName)",
+                            batch.Add(new (string name, object? value)[]
+                            {
                                 ("$raidId", raidId!),
                                 ("$itemId", GetString(item, "itemId")),
                                 ("$templateId", GetString(item, "templateId")),
@@ -291,7 +295,15 @@ public class WsPacketHandler
                                 ("$y", GetString(item, "y")),
                                 ("$z", GetString(item, "z")),
                                 ("$inContainer", item.TryGetProperty("inContainer", out var ic) && ic.GetBoolean() ? "1" : "0"),
-                                ("$containerName", GetString(item, "containerName")));
+                                ("$containerName", GetString(item, "containerName")),
+                            });
+                        }
+                        if (batch.Count > 0)
+                        {
+                            await _db.ExecuteBatchAsync(
+                                @"INSERT OR IGNORE INTO loose_loot (raidId, itemId, templateId, itemName, price, qty, x, y, z, inContainer, containerName)
+                                  VALUES ($raidId, $itemId, $templateId, $itemName, $price, $qty, $x, $y, $z, $inContainer, $containerName)",
+                                batch);
                         }
                     }
                     break;
