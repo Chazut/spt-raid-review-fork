@@ -15,13 +15,26 @@ namespace RAID_REVIEW
     /// </summary>
     class Orbit_Integration
     {
+        private static bool _apiReadyLogged;
+
         /// <summary>Kept for API symmetry with the legacy Phobos_Integration.
         /// The new API doesn't need any per-raid reflection bootstrap, so
-        /// this is just a probe log.</summary>
+        /// this is just a one-shot probe log per raid (caller invokes this
+        /// every tick — without the latch we'd flood the log with thousands
+        /// of identical "API ready" lines).</summary>
         public static void InitReflection()
         {
-            if (OrbitTelemetry.IsAvailable)
-                LoggerInstance.Log.LogInfo("RAID_REVIEW :::: ORBIT :::: API ready");
+            if (_apiReadyLogged) return;
+            if (!OrbitTelemetry.IsAvailable) return;
+            LoggerInstance.Log.LogInfo("RAID_REVIEW :::: ORBIT :::: API ready");
+            _apiReadyLogged = true;
+        }
+
+        /// <summary>Reset the one-shot init log when a new raid starts.
+        /// Called from mod.cs's raid-start hook.</summary>
+        public static void ResetSessionState()
+        {
+            _apiReadyLogged = false;
         }
 
         /// <summary>No-op in the API-based integration — the API resolves

@@ -708,6 +708,7 @@ namespace RAID_REVIEW
                                 _seenLayerNames.Clear();
                                 sessionId = null;
                                 stopwatch.Reset();
+                                if (ORBIT__DETECTED) Orbit_Integration.ResetSessionState();
                             }
                         }
                         continue;
