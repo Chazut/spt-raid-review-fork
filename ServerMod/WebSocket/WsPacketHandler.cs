@@ -147,6 +147,9 @@ public class WsPacketHandler
 
                     _sessionManager.RemoveRaid(raidId!, "Received 'onGameSessionEnd' packet from Raid-Review client mod.");
 
+                    // Publish the buffered position stream before post-processing reads the CSV.
+                    _fileService.FlushAndCloseAll();
+
                     _startPostProcessing?.Invoke(raidId!);
                     _logger.Log("Enabled Post Processing: Raid Finished");
                     break;
@@ -177,7 +180,7 @@ public class WsPacketHandler
 
                 case "PLAYER_STATUS":
                 {
-                    await _db.ExecuteAsync(
+                    _db.QueueWrite(
                         "INSERT INTO player_status (raidId, profileId, time, status) VALUES ($raidId, $profileId, $time, $status)",
                         ("$raidId", raidId!),
                         ("$profileId", GetString(payload, "profileId")),
@@ -189,14 +192,10 @@ public class WsPacketHandler
                 case "PLAYER":
                 {
                     var profileId = GetString(payload, "profileId");
-                    var exists = await _db.QueryAsync(
-                        "SELECT * FROM player WHERE raidId = $raidId AND profileId = $profileId",
-                        ("$raidId", raidId!), ("$profileId", profileId));
-
-                    if (exists.Count > 0) break;
-
+                    // Dedup rides on the UNIQUE (raidId, profileId) index — the old SELECT round-trip
+                    // full-scanned the player table once per bot spawn (spawn waves = burst of scans).
                     await _db.ExecuteAsync(
-                        @"INSERT INTO player (raidId, profileId, level, team, name, ""group"", spawnTime, type, mod_SAIN_brain, mod_SAIN_difficulty) VALUES ($raidId, $profileId, $level, $team, $name, $group, $spawnTime, $type, $brain, $diff)",
+                        @"INSERT OR IGNORE INTO player (raidId, profileId, level, team, name, ""group"", spawnTime, type, mod_SAIN_brain, mod_SAIN_difficulty) VALUES ($raidId, $profileId, $level, $team, $name, $group, $spawnTime, $type, $brain, $diff)",
                         ("$raidId", raidId!),
                         ("$profileId", profileId),
                         ("$level", GetString(payload, "level")),
@@ -212,7 +211,9 @@ public class WsPacketHandler
 
                 case "BALLISTIC":
                 {
-                    await _db.ExecuteAsync(
+                    // Highest-rate DB stream in the mod (one row per round fired during firefights) —
+                    // write-behind coalesces the burst into one transaction per ~250ms window.
+                    _db.QueueWrite(
                         "INSERT INTO ballistic (raidId, time, profileId, weaponId, weaponName, ammoId, hitPlayerId, source, target) VALUES ($raidId, $time, $profileId, $weaponId, $weaponName, $ammoId, $hitPlayerId, $source, $target)",
                         ("$raidId", raidId!),
                         ("$time", GetString(payload, "time")),
@@ -248,7 +249,7 @@ public class WsPacketHandler
                     var filename = $"{raidId}_positions";
                     var keys = ExtractKeysLine(payload);
                     var values = ExtractValuesLine(payload);
-                    await _fileService.WriteLineToFileAsync("positions", "", "", filename, keys + "\n", values + "\n");
+                    _fileService.AppendLineBuffered("positions", "", "", filename, keys + "\n", values + "\n");
                     break;
                 }
 

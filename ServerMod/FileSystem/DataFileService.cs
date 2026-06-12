@@ -9,16 +9,28 @@ public class DataFileService
     // Avoid hammering the disk on every WS POSITION packet (one per
     // player per tick — 80-300/s in a busy raid). Directory.CreateDirectory
     // and File.Exists checks are sync syscalls that were starving the
-    // Kestrel thread pool. We remember dirs we've ensured and files
-    // we've already written headers for so the hot path skips them.
+    // Kestrel thread pool. We remember dirs we've ensured; appended files
+    // get a persistent buffered writer (see _appenders below).
     private readonly ConcurrentDictionary<string, byte> _ensuredDirs = new();
-    private readonly ConcurrentDictionary<string, byte> _headerWritten = new();
+
+    // Persistent buffered writers for the append hot path. File.AppendAllText
+    // opens + flushes + closes the file PER LINE — at position-stream rates
+    // that's hundreds of full open/close cycles per second, which is exactly
+    // what hurts on write-through arrays (Krelsis report). A StreamWriter per
+    // file turns those into in-memory buffer writes; a 1s timer flushes so
+    // live readers (UI mid-raid) stay at most a second behind. FlushAndCloseAll
+    // runs at raid END before post-processing reads the file.
+    private readonly ConcurrentDictionary<string, StreamWriter> _appenders = new();
+    private readonly object _appenderLock = new();
+    private Timer? _flushTimer;
 
     public void Initialize(string dataFolder)
     {
         _dataFolder = dataFolder;
         _ensuredDirs.Clear();
-        _headerWritten.Clear();
+        FlushAndCloseAll();
+        _flushTimer?.Dispose();
+        _flushTimer = new Timer(_ => FlushAll(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
     }
 
     private string BuildPath(string parentFolder, string subFolder, string targetFolder, string fileName)
@@ -36,41 +48,56 @@ public class DataFileService
     }
 
     /// <summary>
-    /// Hot-path append used by the WebSocket POSITION dispatch. Async so
-    /// the I/O wait doesn't block the Kestrel thread pool, plus dir and
-    /// header existence are cached to avoid the per-call FS syscalls.
+    /// Hot-path append used by the WebSocket POSITION dispatch. Writes go to the file's persistent
+    /// buffered writer (created on first call; header emitted iff the file is new/empty), so the
+    /// per-line cost is a memory copy. The flush timer publishes to disk every second.
     /// </summary>
-    public async Task WriteLineToFileAsync(string parentFolder, string subFolder, string targetFolder, string fileName, string keys, string value)
+    public void AppendLineBuffered(string parentFolder, string subFolder, string targetFolder, string fileName, string keys, string value)
     {
         var path = BuildPath(parentFolder, subFolder, targetFolder, fileName);
-        EnsureDirectory(Path.GetDirectoryName(path)!);
-
-        // First write to this path: emit the header (the keys line) then
-        // the value. Subsequent writes skip the existence check entirely.
-        if (_headerWritten.TryAdd(path, 0))
+        var writer = _appenders.GetOrAdd(path, p =>
         {
-            // The path might already exist from a previous server run
-            // (raid resumed, etc.) — in that case we'd duplicate the
-            // header. Cheaper to accept that edge than to spam File.Exists.
-            if (!File.Exists(path))
-            {
-                await File.AppendAllTextAsync(path, keys);
-            }
+            EnsureDirectory(Path.GetDirectoryName(p)!);
+            // FileShare.Read so the web server can read the (flushed) file while the raid is live.
+            var stream = new FileStream(p, FileMode.Append, FileAccess.Write, FileShare.Read);
+            var w = new StreamWriter(stream);
+            if (stream.Length == 0)
+                w.Write(keys);
+            return w;
+        });
+        // StreamWriter isn't thread-safe and WS handlers can run concurrently. One lock for all
+        // appenders is plenty at these rates — the critical section is a buffer memcpy.
+        lock (_appenderLock)
+        {
+            writer.Write(value);
         }
-
-        await File.AppendAllTextAsync(path, value);
     }
 
-    /// <summary>Legacy sync variant kept for non-hot callers.</summary>
-    public void WriteLineToFile(string parentFolder, string subFolder, string targetFolder, string fileName, string keys, string value)
+    public void FlushAll()
     {
-        var path = BuildPath(parentFolder, subFolder, targetFolder, fileName);
-        EnsureDirectory(Path.GetDirectoryName(path)!);
+        lock (_appenderLock)
+        {
+            foreach (var writer in _appenders.Values)
+            {
+                try { writer.Flush(); }
+                catch (ObjectDisposedException) { }
+            }
+        }
+    }
 
-        if (!File.Exists(path))
-            File.WriteAllText(path, keys);
-
-        File.AppendAllText(path, value);
+    /// <summary>Flush + close every buffered appender. Called at raid END before post-processing
+    /// reads the position files, and on re-initialize.</summary>
+    public void FlushAndCloseAll()
+    {
+        lock (_appenderLock)
+        {
+            foreach (var kv in _appenders)
+            {
+                try { kv.Value.Dispose(); }
+                catch (ObjectDisposedException) { }
+            }
+            _appenders.Clear();
+        }
     }
 
     public string? ReadFile(string parentFolder, string subFolder, string targetFolder, string fileName)
@@ -88,9 +115,17 @@ public class DataFileService
     public void DeleteFile(string parentFolder, string subFolder, string targetFolder, string fileName)
     {
         var path = BuildPath(parentFolder, subFolder, targetFolder, fileName);
+        // Close the appender first or the open write handle blocks the delete.
+        if (_appenders.TryRemove(path, out var writer))
+        {
+            lock (_appenderLock)
+            {
+                try { writer.Dispose(); }
+                catch (ObjectDisposedException) { }
+            }
+        }
         if (File.Exists(path))
             File.Delete(path);
-        _headerWritten.TryRemove(path, out _);
     }
 
     public List<string> ReadFolderContents(string parentFolder, string subFolder, string targetFolder)
