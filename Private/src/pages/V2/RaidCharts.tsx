@@ -56,6 +56,7 @@ const FACTION_COLORS: Record<string, string> = {
     'RUAF': '#4A90D9',
     'UNTAR': '#00BFFF',
     'Black Div': '#555555',
+    'ISB': '#1ABC9C',
     'Infected': '#7FFF00',
     'Other': '#00eeff',
     'Unknown': '#999',
@@ -77,7 +78,8 @@ function getFactionGroup(faction: string): string {
         case 'Mercenary':
         case 'RUAF':
         case 'UNTAR':
-        case 'Black Div': return 'Factions';
+        case 'Black Div':
+        case 'ISB': return 'Factions';
         case 'Infected': return 'Infected';
         default: return 'Other';
     }

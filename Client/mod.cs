@@ -156,6 +156,17 @@ namespace RAID_REVIEW
                 case "blackDivAssault": return "BLACK DIV ASSAULT|BLACKDIV";
                 case "blackDivBreacher": return "BLACK DIV BREACHER|BLACKDIV";
                 case "blackDivSupport": return "BLACK DIV SUPPORT|BLACKDIV";
+                // ISB faction mod. Custom WildSpawnType member names (role.ToString() yields the
+                // member name for these, same as the other faction mods above). Future Firefly squad
+                // members are mapped ahead of the mod shipping them.
+                case "ISBSpecialForces": return "ISB SPECIAL FORCES|ISB";
+                case "ISBTeamLeader": return "ISB TEAM LEADER|ISB";
+                case "ISBSecondLeader": return "ISB SECOND LEADER|ISB";
+                case "ISBFirefly": return "ISB FIREFLY|ISB";
+                case "ISBFireflyFollowerLoghan": return "ISB FIREFLY LOGHAN|ISB";
+                case "ISBFireflyFollowerVipper": return "ISB FIREFLY VIPPER|ISB";
+                case "ISBFireflyShielder01": return "ISB FIREFLY SHIELDER 1|ISB";
+                case "ISBFireflyShielder02": return "ISB FIREFLY SHIELDER 2|ISB";
                 default: return role.ToString().ToUpper() + "|FACTION_MOD";
             }
         }

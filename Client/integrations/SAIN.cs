@@ -413,6 +413,32 @@ namespace RAID_REVIEW
                             RR_WildSpawnType = "BLACK DIV SUPPORT|BLACKDIV";
                             break;
 
+                        // ISB faction mod (mirror of MapWildSpawnType in mod.cs)
+                        case "ISBSpecialForces":
+                            RR_WildSpawnType = "ISB SPECIAL FORCES|ISB";
+                            break;
+                        case "ISBTeamLeader":
+                            RR_WildSpawnType = "ISB TEAM LEADER|ISB";
+                            break;
+                        case "ISBSecondLeader":
+                            RR_WildSpawnType = "ISB SECOND LEADER|ISB";
+                            break;
+                        case "ISBFirefly":
+                            RR_WildSpawnType = "ISB FIREFLY|ISB";
+                            break;
+                        case "ISBFireflyFollowerLoghan":
+                            RR_WildSpawnType = "ISB FIREFLY LOGHAN|ISB";
+                            break;
+                        case "ISBFireflyFollowerVipper":
+                            RR_WildSpawnType = "ISB FIREFLY VIPPER|ISB";
+                            break;
+                        case "ISBFireflyShielder01":
+                            RR_WildSpawnType = "ISB FIREFLY SHIELDER 1|ISB";
+                            break;
+                        case "ISBFireflyShielder02":
+                            RR_WildSpawnType = "ISB FIREFLY SHIELDER 2|ISB";
+                            break;
+
                         default:
                             // Graceful fallback for unknown custom faction mods
                             RR_WildSpawnType = wildSpawnType.ToString().ToUpper() + "|FACTION_MOD";

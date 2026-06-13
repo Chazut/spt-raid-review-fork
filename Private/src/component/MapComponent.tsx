@@ -66,7 +66,8 @@ function classifyPlayer(player: any): string {
         case 'MERCENARY':
         case 'RUAF':
         case 'UNTAR':
-        case 'BLACKDIV': return 'FACTION'
+        case 'BLACKDIV':
+        case 'ISB': return 'FACTION'
         case 'SCAV':
         default:
             if (player.type === 'PLAYER' && player.team === 'Savage') return 'SCAV'
@@ -2771,7 +2772,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
 
                                 // Faction sub-grouping by faction type
                                 if (group.key === 'FACTION') {
-                                    const FACTION_LABELS: Record<string, string> = { MERCENARY: 'Mercenary', RUAF: 'RUAF', UNTAR: 'UNTAR', BLACKDIV: 'Black Div' }
+                                    const FACTION_LABELS: Record<string, string> = { MERCENARY: 'Mercenary', RUAF: 'RUAF', UNTAR: 'UNTAR', BLACKDIV: 'Black Div', ISB: 'ISB' }
                                     const factions: Record<string, { player: any, originalIndex: number }[]> = {}
                                     items.forEach(item => {
                                         let fType = BotMapping[item.player.type]?.type
