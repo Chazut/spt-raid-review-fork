@@ -360,11 +360,21 @@ export default function RaidOverview() {
           let difficulty = player.mod_SAIN_difficulty;
           let brain = getPlayerBrain(player);
 
-          // Faction-mod bots: show only their specific role (Rifleman, Grenadier, etc.)
+          // Faction-mod bots (RUAF, UNTAR, BLACKDIV, MERCENARY): show their specific
+          // role (Rifleman, Grenadier, etc.).
           const category = typeof player.type === "string" && player.type.includes("|") ? player.type.split("|")[1] : "";
-          if (["RUAF", "UNTAR", "BLACKDIV", "MERCENARY", "ISB"].includes(category)) {
+          if (["RUAF", "UNTAR", "BLACKDIV", "MERCENARY"].includes(category)) {
             const role = getFactionRole(player);
             if (role) return role;
+          }
+
+          // ISB only: its WildSpawnType names are misleading (variants reuse the
+          // boss-roster slot names), so show the SAIN "difficulty - personality" like
+          // regular bots instead of the role.
+          if (category === "ISB") {
+            const personality = (player.mod_SAIN_brain || "").trim();
+            const hasPersonality = personality !== "" && !["UNKNOWN", "PMC", "SCAV", "PLAYER"].includes(personality);
+            if (hasPersonality) brain = personality;
           }
 
           if (difficulty !== null && difficulty !== "") {

@@ -2782,10 +2782,20 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         if (player) {
             let difficulty = player.mod_SAIN_difficulty
             let brain = getPlayerBrain(player)
-            // For faction-mod bots, show only their specific role (Rifleman, Grenadier, etc.)
+            // Faction-mod bots: show their specific role (Rifleman, Grenadier, etc.).
+            // ISB is the exception: its WildSpawnType names are misleading (variants
+            // reuse the boss-roster slot names), so for ISB show the SAIN
+            // "difficulty - personality" like regular bots instead of the role.
             if (classifyPlayer(player) === 'FACTION') {
-                const role = getFactionRole(player)
-                if (role) return role
+                const category = typeof player.type === 'string' && player.type.includes('|') ? player.type.split('|')[1] : ''
+                if (category === 'ISB') {
+                    const personality = (player.mod_SAIN_brain || '').trim()
+                    const hasPersonality = personality !== '' && !['UNKNOWN', 'PMC', 'SCAV', 'PLAYER'].includes(personality)
+                    if (hasPersonality) brain = personality
+                } else {
+                    const role = getFactionRole(player)
+                    if (role) return role
+                }
             }
             if (difficulty !== null && difficulty !== '') {
                 return `${difficulty} - ${brain}`
