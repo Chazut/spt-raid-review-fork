@@ -134,9 +134,11 @@ function resolveQuestName(triggerName: string, map: Record<string, string>): str
     return best
 }
 
-function createPlayerMarker(latlng: any, color: string, player: any, proportionalScale: number, opacity: number = 1, pmcIndex?: number, tooltipText?: string, behaviorColor?: string | null, hpPercent?: number): L.Layer {
-    const displayName = tooltipText || getDisplayName(player)
-    const tooltipOpts: L.TooltipOptions = { direction: 'top', offset: [0, -10], className: 'player-tooltip' }
+// Builds the divIcon for a player dot plus the raw html string used for it, so
+// callers can cheaply detect when the icon actually changed between frames and
+// avoid a needless setIcon (which swaps the DOM element and disrupts an open
+// tooltip — see issue #24).
+function buildPlayerIcon(color: string, player: any, proportionalScale: number, opacity: number, pmcIndex?: number, behaviorColor?: string | null, hpPercent?: number): { icon: L.DivIcon, html: string } {
     const ringStyle = behaviorColor ? `box-shadow: 0 0 0 3px ${behaviorColor}, 0 0 6px 1px ${behaviorColor}55;` : ''
     // HP fill: gradient from bottom (color) to top (dark) based on HP percentage
     const hp = hpPercent != null ? Math.max(0, Math.min(100, hpPercent)) : 100
@@ -146,42 +148,55 @@ function createPlayerMarker(latlng: any, color: string, player: any, proportiona
     const label = getMarkerLabel(player)
     if (label === 'BTR_ICON') {
         const btrSvg = `<svg viewBox="0 0 24 18" width="24" height="18" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="3" width="20" height="8" rx="1" fill="${color}" opacity="${opacity}"/><rect x="5" y="1" width="10" height="4" rx="1" fill="${color}" opacity="${opacity}"/><line x1="15" y1="3" x2="20" y2="5" stroke="${color}" stroke-width="1.2" opacity="${opacity}"/><circle cx="5.5" cy="13.5" r="2.5" fill="${color}" opacity="${opacity}"/><circle cx="12" cy="13.5" r="2.5" fill="${color}" opacity="${opacity}"/><circle cx="18.5" cy="13.5" r="2.5" fill="${color}" opacity="${opacity}"/><circle cx="5.5" cy="13.5" r="1" fill="#1a1a1a"/><circle cx="12" cy="13.5" r="1" fill="#1a1a1a"/><circle cx="18.5" cy="13.5" r="1" fill="#1a1a1a"/></svg>`
-        const icon = L.divIcon({
-            className: 'special-bot-marker',
-            html: `<div style="display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 0 2px rgba(0,0,0,0.9));${ringStyle}">${btrSvg}</div>`,
-            iconSize: [24, 20],
-            iconAnchor: [12, 10],
-        })
-        return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, { ...tooltipOpts, className: 'player-tooltip player-tooltip-html' })
+        const html = `<div style="display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 0 2px rgba(0,0,0,0.9));${ringStyle}">${btrSvg}</div>`
+        return { icon: L.divIcon({ className: 'special-bot-marker', html, iconSize: [24, 20], iconAnchor: [12, 10] }), html }
     }
     if (label) {
-        const icon = L.divIcon({
-            className: 'special-bot-marker',
-            html: `<div class="bot-marker-dot" style="${bgStyle} opacity: ${opacity}; ${ringStyle}">${label}</div>`,
-            iconSize: [18, 18],
-            iconAnchor: [9, 9],
-        })
-        return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, { ...tooltipOpts, className: 'player-tooltip player-tooltip-html' })
+        const html = `<div class="bot-marker-dot" style="${bgStyle} opacity: ${opacity}; ${ringStyle}">${label}</div>`
+        return { icon: L.divIcon({ className: 'special-bot-marker', html, iconSize: [18, 18], iconAnchor: [9, 9] }), html }
     }
     // PMCs and player scavs get white border + number label
     if (pmcIndex !== undefined) {
-        const icon = L.divIcon({
-            className: 'special-bot-marker',
-            html: `<div class="bot-marker-dot bot-marker-round" style="${bgStyle} opacity: ${opacity}; ${ringStyle}">${pmcIndex}</div>`,
-            iconSize: [18, 18],
-            iconAnchor: [9, 9],
-        })
-        return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, { ...tooltipOpts, className: 'player-tooltip player-tooltip-html' })
+        const html = `<div class="bot-marker-dot bot-marker-round" style="${bgStyle} opacity: ${opacity}; ${ringStyle}">${pmcIndex}</div>`
+        return { icon: L.divIcon({ className: 'special-bot-marker', html, iconSize: [18, 18], iconAnchor: [9, 9] }), html }
     }
     // Scavs: plain circle — always use divIcon for HP fill + behavior ring support
     const size = Math.max(10, proportionalScale * 2)
-    const icon = L.divIcon({
-        className: 'special-bot-marker',
-        html: `<div style="width:${size}px;height:${size}px;border-radius:50%;${bgStyle}opacity:${opacity};${ringStyle}"></div>`,
-        iconSize: [size, size],
-        iconAnchor: [size / 2, size / 2],
-    })
-    return L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, { ...tooltipOpts, className: 'player-tooltip player-tooltip-html' })
+    const html = `<div style="width:${size}px;height:${size}px;border-radius:50%;${bgStyle}opacity:${opacity};${ringStyle}"></div>`
+    return { icon: L.divIcon({ className: 'special-bot-marker', html, iconSize: [size, size], iconAnchor: [size / 2, size / 2] }), html }
+}
+
+function createPlayerMarker(latlng: any, color: string, player: any, proportionalScale: number, opacity: number = 1, pmcIndex?: number, tooltipText?: string, behaviorColor?: string | null, hpPercent?: number): L.Marker {
+    const displayName = tooltipText || getDisplayName(player)
+    const tooltipOpts: L.TooltipOptions = { direction: 'top', offset: [0, -10], className: 'player-tooltip player-tooltip-html' }
+    const { icon, html } = buildPlayerIcon(color, player, proportionalScale, opacity, pmcIndex, behaviorColor, hpPercent)
+    const marker = L.marker(latlng, { icon, interactive: true }).bindTooltip(displayName, tooltipOpts) as L.Marker
+    ;(marker as any)._rr_iconHtml = html
+    ;(marker as any)._rr_baseTooltip = displayName
+    return marker
+}
+
+// Mutates an existing persistent player marker in place rather than tearing it
+// down + rebuilding it every playback frame (issue #24). Preserves the Leaflet
+// layer + tooltip identity so the hovered/followed tooltip never flickers.
+function updatePlayerMarker(marker: L.Marker, latlng: any, color: string, player: any, proportionalScale: number, opacity: number, pmcIndex: number | undefined, tooltipText: string, behaviorColor: string | null | undefined, hpPercent: number | undefined, isFocused: boolean): void {
+    marker.setLatLng(latlng)
+    const { icon, html } = buildPlayerIcon(color, player, proportionalScale, opacity, pmcIndex, behaviorColor, hpPercent)
+    // Only swap the icon element when the visuals actually changed, and never
+    // while this is the focused/hovered marker — setIcon recreates the DOM node
+    // and would interrupt the open tooltip.
+    if (html !== (marker as any)._rr_iconHtml && !isFocused) {
+        marker.setIcon(icon)
+        ;(marker as any)._rr_iconHtml = html
+    }
+    const displayName = tooltipText || getDisplayName(player)
+    // Stash the latest base text so the focus overlay can enrich from it; only
+    // write the live tooltip for non-focused markers (the focus overlay owns the
+    // focused one and avoids per-frame open/close churn).
+    ;(marker as any)._rr_baseTooltip = displayName
+    if (!isFocused) {
+        marker.setTooltipContent(displayName)
+    }
 }
 import '../modules/leaflet-heat.js'
 import './Map.css'
@@ -485,6 +500,16 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     const focusVictimIdsRef = useRef<Set<string>>(new Set())
     const focusKillerIdRef = useRef<string | null>(null)
     const focusLayersRef = useRef<L.Layer[]>([])
+    // Persistent player-dot markers keyed by playerId, mutated in place across
+    // playback frames instead of being torn down + rebuilt every tick. Fixes the
+    // tooltip flicker + name jitter reported in issue #24.
+    const playerMarkersRef = useRef<Map<string, L.Marker>>(new Map())
+    // The focus-overlay tooltip currently applied {id, html}, so we only re-issue
+    // setTooltipContent/openTooltip when it actually changes (no per-frame churn).
+    const focusTooltipRef = useRef<{ id: string, html: string } | null>(null)
+    // Signature of the focus kill-visualization (focus + kill-set) so the skull
+    // markers / kill lines are only rebuilt on real changes, not every frame.
+    const killVizSigRef = useRef<string | null>(null)
     const mapViewRef = useRef({})
 
     // Kill relationship sets for legend highlighting + refs for position renderer
@@ -821,8 +846,12 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
 
         clearMap(MAP, { start: timeStartLimit, end: timeEndLimit })
 
-        // Two-pass rendering: polylines first, then markers (so dots are always on top)
-        const deferredMarkers: { layer: L.Layer, playerId: string, followAction?: boolean }[] = []
+        // Issue #24: player markers are persistent and mutated in place (see
+        // playerMarkersRef); track which players we render this frame so we can
+        // cull markers for players who died or scrubbed out of the time window.
+        // Dots live in Leaflet's markerPane, which sits above the overlayPane the
+        // per-frame polylines are re-added to, so they always stay on top.
+        const renderedPlayerIds = new Set<string>()
 
         const playerPositionKeys = Object.keys(positions)
         for (let i = 0; i < playerPositionKeys.length; i++) {
@@ -973,47 +1002,62 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                     const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})${healthLine}${behaviorLine}${extractLine}${lootLine}`
                     const ringColor = behaviorCat && behaviorCat.key !== 'idle' && behaviorCat.key !== 'patrol' ? behaviorCat.color : undefined
                     const hpPct = (currentHealth != null && maxHealth != null && maxHealth > 0) ? Math.round((currentHealth / maxHealth) * 100) : undefined
-                    const marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, markerOpacity, pmcIndexMap[playerId], tip, ringColor, hpPct)
-                    marker._rr_playerId = playerId
-                    marker._rr_isDead = false
-                    marker._rr_normalOpacity = 1
-                    deferredMarkers.push({ layer: marker, playerId })
+                    const isFocused = playerFocusRef.current === playerId
+                    let marker = playerMarkersRef.current.get(playerId)
+                    if (!marker) {
+                        // First appearance: create once, wire listeners once.
+                        marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, markerOpacity, pmcIndexMap[playerId], tip, ringColor, hpPct)
+                        marker._rr_playerId = playerId
+                        marker._rr_isDead = false
+                        marker._rr_normalOpacity = 1
+                        marker._rr_persistentPlayer = true
+                        marker.addTo(MAP)
+                        marker.on('mouseover', () => {
+                            if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current)
+                            setPlayerFocus(playerId)
+                        })
+                        marker.on('mouseout', () => {
+                            if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current)
+                            focusTimeoutRef.current = setTimeout(() => setPlayerFocus(null), 100)
+                        })
+                        // ORBIT main objectives: click any bot marker to toggle
+                        // the per-squad mains overlay (see findSquadIdForPlayer).
+                        marker.on('click', () => {
+                            const sqId = findSquadIdForPlayer(playerId)
+                            if (sqId == null) return
+                            setSelectedSquadForMains(prev => prev === sqId ? null : sqId)
+                        })
+                        playerMarkersRef.current.set(playerId, marker)
+                    } else {
+                        // Subsequent frames: mutate in place — no teardown/rebind.
+                        updatePlayerMarker(marker, endOfLine, pickedColor, player, proportionalScale, markerOpacity, pmcIndexMap[playerId], tip, ringColor, hpPct, isFocused)
+                        marker._rr_isDead = false
+                        marker._rr_normalOpacity = 1
+                    }
+                    renderedPlayerIds.add(playerId)
                     if (followPlayer === playerId) {
                         if (!followPlayerZoomed) {
                             MAP.setZoom(3)
                             setFollowPlayerZoomed(true)
                         }
-                        MAP.panTo(endOfLine, 4)
+                        // Snap (no pan animation): the bare `4` here used to take
+                        // Leaflet's animated branch, restarting a 0.25s tween every
+                        // frame and producing the ~1px name jitter from issue #24.
+                        MAP.panTo(endOfLine, { animate: false })
                     }
                 }
             }
         }
 
-        // Second pass: add all markers on top of polylines
-        for (const { layer, playerId } of deferredMarkers) {
-            layer.addTo(MAP)
-            layer.on('mouseover', () => {
-                if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current)
-                setPlayerFocus(playerId)
-            })
-            layer.on('mouseout', () => {
-                if (focusTimeoutRef.current) clearTimeout(focusTimeoutRef.current)
-                focusTimeoutRef.current = setTimeout(() => setPlayerFocus(null), 100)
-            })
-            // ORBIT main objectives: click any bot marker to toggle
-            // the per-squad mains overlay. If THAT squad is already
-            // selected, click hides it. If a different squad's mains
-            // are showing, the click swaps to the new squad. If no
-            // squad's mains data exists for this bot (bot scav / boss
-            // / raider — they skip the system), the click is a no-op.
-            layer.on('click', () => {
-                // Scan all snapshots (not just ≤ timeEndLimit) so a dead
-                // bot's dot still resolves to its historic squad. See
-                // findSquadIdForPlayer for the why.
-                const sqId = findSquadIdForPlayer(playerId)
-                if (sqId == null) return
-                setSelectedSquadForMains(prev => prev === sqId ? null : sqId)
-            })
+        // Cull persistent markers for players not rendered this frame — i.e. the
+        // player died (isPlayerDead), was hidden (hidePlayers), or scrubbed out of
+        // the time window (empty cleanPositions). The old stateless rebuild got
+        // this for free via clearMap; persistent markers must reconcile it here.
+        for (const [pid, marker] of playerMarkersRef.current) {
+            if (!renderedPlayerIds.has(pid)) {
+                try { marker.remove() } catch (e) { /* layer/map already gone */ }
+                playerMarkersRef.current.delete(pid)
+            }
         }
 
         if (sliderTimes.length === 0) {
@@ -1033,11 +1077,24 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         if (!MAP || !mapIsReady) return
         playerFocusRef.current = playerFocus
 
-        // Clean up previous focus layers
-        for (const layer of focusLayersRef.current) {
-            MAP.removeLayer(layer)
+        // Issue #24 follow-up: the kill-visualization layers (kill/death lines,
+        // skull markers, dead-player temp marker) are static for a given focus +
+        // kill-set, but this effect re-runs every playback frame (timeEndLimit is a
+        // dep, needed to keep the focused tooltip's live HP/loot fresh). Only tear
+        // them down + rebuild when the focus or relevant kill-set actually changes,
+        // otherwise the skull icons strobe while hovering the killer during play.
+        const killVizSig = playerFocus
+            ? `${playerFocus}|${events.filter(e => (e.killedId === playerFocus || (e.profileId === playerFocus && e.profileId !== e.killedId)) && e.time < timeEndLimit).length}`
+            : ''
+        const killVizChanged = killVizSig !== killVizSigRef.current
+        if (killVizChanged) {
+            killVizSigRef.current = killVizSig
+            // Clean up previous focus layers
+            for (const layer of focusLayersRef.current) {
+                MAP.removeLayer(layer)
+            }
+            focusLayersRef.current = []
         }
-        focusLayersRef.current = []
 
         // Build victim/killer sets for kill relationship highlighting
         const victimIds = new Set<string>()
@@ -1096,14 +1153,17 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             }
         }
 
-        // Restore any previously modified tooltips, then enrich focused player's dot tooltip
-        for (const key in MAP._layers) {
-            const layer = MAP._layers[key]
-            if (layer._rr_originalTooltip !== undefined) {
-                layer.setTooltipContent(layer._rr_originalTooltip)
-                layer.closeTooltip()
-                delete layer._rr_originalTooltip
+        // Issue #24: this effect re-runs every playback frame (timeEndLimit is a
+        // dep), so we must NOT blindly close/reopen the focused tooltip each tick.
+        // When focus moves off a marker, revert it to its base tooltip once.
+        const prevFocus = focusTooltipRef.current
+        if (prevFocus && prevFocus.id !== playerFocus) {
+            const prevMarker = playerMarkersRef.current.get(prevFocus.id)
+            if (prevMarker) {
+                if (prevMarker._rr_baseTooltip !== undefined) prevMarker.setTooltipContent(prevMarker._rr_baseTooltip)
+                prevMarker.closeTooltip()
             }
+            focusTooltipRef.current = null
         }
         if (playerFocus) {
             const kills = events.filter(e => e.profileId === playerFocus && e.profileId !== e.killedId && e.time < timeEndLimit)
@@ -1131,24 +1191,26 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 return html
             }
 
-            // Try to find existing marker for this player (alive players)
-            let found = false
-            for (const key in MAP._layers) {
-                const layer = MAP._layers[key]
-                if (layer._rr_playerId === playerFocus && (layer instanceof L.Marker || layer instanceof L.Circle)) {
-                    const tooltip = layer.getTooltip()
-                    if (tooltip) {
-                        layer._rr_originalTooltip = tooltip.getContent()
-                        layer.setTooltipContent(buildFeedHtml(layer._rr_originalTooltip))
-                        layer.openTooltip()
-                    }
-                    found = true
-                    break
+            // Alive player: enrich the persistent marker's tooltip in place. Only
+            // (re)apply when the content actually changed, and call openTooltip at
+            // most once — this is what removes the per-frame flicker (issue #24).
+            const marker = playerMarkersRef.current.get(playerFocus)
+            if (marker) {
+                const base = marker._rr_baseTooltip !== undefined
+                    ? marker._rr_baseTooltip
+                    : (marker.getTooltip()?.getContent() ?? '')
+                const html = buildFeedHtml(base as string)
+                const prev = focusTooltipRef.current
+                if (!prev || prev.id !== playerFocus || prev.html !== html) {
+                    marker.setTooltipContent(html)
+                    if (!(marker.isTooltipOpen && marker.isTooltipOpen())) marker.openTooltip()
+                    focusTooltipRef.current = { id: playerFocus, html }
                 }
             }
 
             // Dead player: no marker on map, create a temporary one at death position
-            if (!found && death) {
+            // (gated: only (re)build when the kill-set/focus changed — see killVizSig)
+            if (killVizChanged && !marker && death) {
                 const player = raidData.players.find(p => p.profileId === playerFocus)
                 const playerIdx = player ? raidData.players.indexOf(player) : 0
                 const color = player ? getPlayerColor(player, playerIdx) : '#999'
@@ -1158,12 +1220,14 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 }).addTo(MAP)
                 tmpMarker.bindTooltip(buildFeedHtml(displayName), { direction: 'top', offset: [0, -10], className: 'player-tooltip' })
                 tmpMarker.openTooltip()
+                tmpMarker._rr_focusViz = true
                 focusLayersRef.current.push(tmpMarker)
             }
         }
 
-        // Add kill visualization if a player is focused
-        if (playerFocus && events.length > 0) {
+        // Add kill visualization if a player is focused (gated by killVizSig so the
+        // skull markers / lines are not torn down + rebuilt every playback frame).
+        if (killVizChanged && playerFocus && events.length > 0) {
             // Kills made by hovered player (respecting timeline)
             const playerKills = events.filter(e => e.profileId === playerFocus && e.profileId !== e.killedId && e.time < timeEndLimit)
             for (const kill of playerKills) {
@@ -1171,10 +1235,12 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                     [[kill.source.z, kill.source.x], [kill.target.z, kill.target.x]],
                     { color: 'red', weight: 2, dashArray: [10], dashOffset: 3, opacity: 1, interactive: false }
                 ).addTo(MAP)
+                line._rr_focusViz = true
                 focusLayersRef.current.push(line)
                 const skullHtml = `<img src="/skull.png" /><span class="tooltiptext event event-map text-sm"><strong>${kill.killedNickname}</strong><br/>${intl([kill.weapon.replace('Name', 'ShortName')], intl_dir)}, ${kill.distance.toFixed(0)}m${kill.bodyPart ? ', ' + kill.bodyPart : ''}</span>`
                 const skullIcon = L.divIcon({ className: 'death-icon tooltip event follow-kill-marker', html: skullHtml })
                 const marker = L.marker([kill.target.z, kill.target.x], { icon: skullIcon, interactive: false, zIndexOffset: -1000 }).addTo(MAP)
+                marker._rr_focusViz = true
                 focusLayersRef.current.push(marker)
             }
 
@@ -1185,14 +1251,31 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                     [[deathEvent.source.z, deathEvent.source.x], [deathEvent.target.z, deathEvent.target.x]],
                     { color: 'red', weight: 2, dashArray: [10], dashOffset: 3, opacity: 1, interactive: false }
                 ).addTo(MAP)
+                line._rr_focusViz = true
                 focusLayersRef.current.push(line)
                 const ownDeathHtml = `<div class="own-death-ring"><img src="/skull.png" /></div><span class="tooltiptext event event-map text-sm"><strong>${deathEvent.profileNickname}</strong><br/>killed<br/><strong>${deathEvent.killedNickname}</strong><br/>${intl([deathEvent.weapon.replace('Name', 'ShortName')], intl_dir)}, ${deathEvent.distance.toFixed(0)}m${deathEvent.bodyPart ? ', ' + deathEvent.bodyPart : ''}</span>`
                 const ownDeathIcon = L.divIcon({ className: 'death-icon tooltip event follow-kill-marker', html: ownDeathHtml })
                 const marker = L.marker([deathEvent.target.z, deathEvent.target.x], { icon: ownDeathIcon, interactive: false, zIndexOffset: -1000 }).addTo(MAP)
+                marker._rr_focusViz = true
                 focusLayersRef.current.push(marker)
             }
         }
     }, [playerFocus, MAP, mapIsReady, events, timeEndLimit, intl_dir])
+
+    // Issue #24: persistent player markers live across frames; when the map
+    // instance is torn down/rebuilt, drop them so the ref never holds dead layers.
+    useEffect(() => {
+        return () => {
+            playerMarkersRef.current.forEach((marker) => {
+                try { marker.remove() } catch (e) { /* map already gone */ }
+            })
+            playerMarkersRef.current.clear()
+            focusTooltipRef.current = null
+            // Force the gated focus kill-viz to rebuild on the next (new) map.
+            killVizSigRef.current = null
+            focusLayersRef.current = []
+        }
+    }, [MAP])
 
     // Slider Time Update
     useEffect(() => {
@@ -1550,6 +1633,53 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         return ids
     }, [raidData?.looting, timeEndLimit])
 
+    // Discrete timeline-progress signals (issue #24 follow-up). The overlay
+    // effects below are timeline-aware but their rendered marker/tooltip set only
+    // changes when an event crosses the playhead, not on every animation frame.
+    // Keying those effects on these counters (instead of the continuous
+    // timeEndLimit) makes them rebuild only on real changes, so hovering an
+    // item / objective / loot tooltip during playback no longer flickers.
+    const lootProgress = useMemo(() => {
+        if (!raidData?.looting) return 0
+        let n = 0
+        for (const l of raidData.looting) if (Number(l.time) <= timeEndLimit) n++
+        return n
+    }, [raidData?.looting, timeEndLimit])
+
+    const killProgress = useMemo(() => {
+        if (!raidData?.kills) return 0
+        let n = 0
+        for (const k of raidData.kills) if (Number(k.time) <= timeEndLimit) n++
+        return n
+    }, [raidData?.kills, timeEndLimit])
+
+    const objectiveProgress = useMemo(() => {
+        let n = 0
+        for (const o of botObjectiveData) if (Number(o.time) <= timeEndLimit) n++
+        return n
+    }, [botObjectiveData, timeEndLimit])
+
+    const questProgress = useMemo(() => {
+        let n = 0
+        for (const q of botQuestData) if (Number(q.time) <= timeEndLimit) n++
+        return n
+    }, [botQuestData, timeEndLimit])
+
+    const phobosSnapIdx = useMemo(() => {
+        let idx = -1
+        for (let i = 0; i < phobosFieldData.length; i++) {
+            if (phobosFieldData[i].time <= timeEndLimit) idx = i
+            else break
+        }
+        return idx
+    }, [phobosFieldData, timeEndLimit])
+
+    const orbitMainsProgress = useMemo(() => {
+        let n = 0
+        for (const e of orbitMainObjectivesData) if (Number(e.time) <= timeEndLimit) n++
+        return n
+    }, [orbitMainObjectivesData, timeEndLimit])
+
     // Loose Loot: render / update markers on map (timeline-aware + container grouping)
     useEffect(() => {
         if (!MAP || !mapIsReady) return
@@ -1686,7 +1816,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 looseLootLayerRef.current = null
             }
         }
-    }, [MAP, mapIsReady, showLooseLoot, looseLootData, looseLootMinPrice, looseLootFilter, pickedUpItemIds, raidData?.looting, timeEndLimit])
+    }, [MAP, mapIsReady, showLooseLoot, looseLootData, looseLootMinPrice, looseLootFilter, raidData?.looting, lootProgress])
 
     // Bot Quests: always fetch data (panel visibility depends on data existing)
     useEffect(() => {
@@ -1803,7 +1933,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 botQuestLayerRef.current = null
             }
         }
-    }, [MAP, mapIsReady, showBotQuests, botQuestData, timeEndLimit, raidData?.players, raidData?.kills, positions])
+    }, [MAP, mapIsReady, showBotQuests, botQuestData, questProgress, killProgress, raidData?.players, raidData?.kills, positions])
 
     // Bot Objectives (legacy Phobos / ORBIT): always fetch data (panel
     // visibility depends on data existing). Pulls from BOTH the legacy
@@ -1924,7 +2054,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 botObjectiveLayerRef.current = null
             }
         }
-    }, [MAP, mapIsReady, showBotObjectives, botObjectiveData, timeEndLimit, raidData?.players, raidData?.kills, positions])
+    }, [MAP, mapIsReady, showBotObjectives, botObjectiveData, objectiveProgress, killProgress, raidData?.players, raidData?.kills, positions])
 
     // Phobos / ORBIT advection field: fetch snapshots once from both
     // sources and merge. Same shape, just two independent tables — drop
@@ -2063,7 +2193,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 phobosFieldLayerRef.current = null
             }
         }
-    }, [MAP, mapIsReady, showPhobosField, showPhobosAdvection, showPhobosConvergence, showPhobosZones, phobosFieldData, timeEndLimit])
+    }, [MAP, mapIsReady, showPhobosField, showPhobosAdvection, showPhobosConvergence, showPhobosZones, phobosFieldData, phobosSnapIdx])
 
     // (Phobos POIs / squad-home / squad-main-force debug overlays were
     // removed — they served their purpose during integration validation
@@ -2205,7 +2335,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 orbitMainObjectivesLayerRef.current = null
             }
         }
-    }, [MAP, mapIsReady, selectedSquadForMains, orbitMainObjectivesData, timeEndLimit, questNameMap])
+    }, [MAP, mapIsReady, selectedSquadForMains, orbitMainObjectivesData, orbitMainsProgress, questNameMap])
 
     // Loot float animations: show floating text when timeline crosses a loot event
     // Uses a ref-based approach to avoid useEffect cleanup killing the animation on re-render
@@ -2528,6 +2658,18 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         
             // Skip layers managed by other overlays (quests, loose loot, grenades, etc.)
             if (layer._rr_quest || layer._rr_looseLoot || layer._rr_grenade || layer._rr_objective || layer._rr_phobos) continue;
+
+            // Persistent player-dot markers (issue #24) are mutated in place across
+            // frames, not torn down here; their lifecycle is reconciled in the main
+            // render effect. Other markers/polylines/circles still get cleared.
+            if (layer._rr_persistentPlayer) continue;
+
+            // Focus kill-visualization layers (kill/death lines, skull markers,
+            // dead-player temp marker) are now rebuilt only on focus/kill changes
+            // (gated by killVizSig), so clearMap must NOT strip them every frame —
+            // otherwise the skulls vanish mid-playback. The focus effect owns their
+            // teardown via focusLayersRef.
+            if (layer._rr_focusViz) continue;
 
             // Remove polylines without eventType or not being ballisticsLine, circles, and special bot markers
             const isSpecialBotMarker = layer instanceof L.Marker && layer.options?.icon?.options?.className === 'special-bot-marker';
