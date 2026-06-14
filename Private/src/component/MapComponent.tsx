@@ -1546,6 +1546,12 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             return
         }
 
+        // Frame-skip at high speeds. Keep a fixed ~24fps render cadence and advance
+        // `playbackSpeed` frames per tick, instead of shrinking the interval to
+        // 1000/(24*speed) — at 16x that asked for a 2.6ms interval the browser can't
+        // sustain (each tick is a full re-render), so the real speed capped at
+        // whatever the machine could render. Now 16x covers 16x the timeline per
+        // second at a constant render load.
         const interval = setInterval(() => {
             setTimeCurrentIndex((prevIndex) => {
                 // Check if we've reached the end of the sliderTimes
@@ -1555,8 +1561,9 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                     return prevIndex
                 }
 
-                const frame = sliderTimes[prevIndex]
-                const startFrame = sliderTimes[Math.max(0, prevIndex - dropOffIndex)]
+                const nextIndex = Math.min(prevIndex + playbackSpeed, sliderTimes.length - 1)
+                const frame = sliderTimes[nextIndex]
+                const startFrame = sliderTimes[Math.max(0, nextIndex - dropOffIndex)]
 
                 if (!preserveHistory && startFrame) {
                     setTimeStartLimit(startFrame)
@@ -1568,9 +1575,9 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
 
                 setTimeEndLimit(frame)
 
-                return prevIndex + 1
+                return nextIndex
             })
-        }, 1000 / (24 * playbackSpeed))
+        }, 1000 / 24)
 
         return () => clearInterval(interval)
     }, [playing, sliderTimes, playbackSpeed, timeCurrentIndex, preserveHistory])
@@ -3706,7 +3713,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                     <div className="text-eft mb-2 flex justify-between">
                         <span>{msToHMS(timeEndLimit)}</span>
                         <span className={`${hideNerdStats ? 'invisible' : ''}`}>
-                            {((timeCurrentIndex / sliderTimes.length) * 100).toFixed(0)}% | {24 * playbackSpeed}fps | Frame: {timeCurrentIndex} / {sliderTimes.length - 1} | Cut In/Out (ms): {timeStartLimit} / {timeEndLimit}
+                            {((timeCurrentIndex / sliderTimes.length) * 100).toFixed(0)}% | 24fps · {playbackSpeed}x | Frame: {timeCurrentIndex} / {sliderTimes.length - 1} | Cut In/Out (ms): {timeStartLimit} / {timeEndLimit}
                         </span>
                         <span>{msToHMS(sliderTimes.length > 0 ? sliderTimes[sliderTimes.length - 1] : 0)}</span>
                     </div>
