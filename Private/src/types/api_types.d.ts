@@ -55,6 +55,7 @@ export interface TrackingRaidDataPlayers {
   spawnTime: number
   mod_SAIN_brain: string
   mod_SAIN_difficulty: string
+  mod_SAIN_name: string
 }
 
 export interface TrackingRaidDataKills {

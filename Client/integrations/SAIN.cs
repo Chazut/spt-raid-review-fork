@@ -131,11 +131,20 @@ namespace RAID_REVIEW
                                     {
                                         trackingPlayer.type = sainType;
                                     }
+
+                                    // ISB faction only: capture SAIN's bot-type display name
+                                    // (e.g. "ISB Operator") from SAIN's static registry, keyed by
+                                    // WildSpawnType. This is the name the faction author controls,
+                                    // so it isn't tied to the (often misleading) WildSpawnType role.
+                                    if (sainType.EndsWith("|ISB"))
+                                    {
+                                        trackingPlayer.mod_SAIN_name = getSainBotTypeName(profile);
+                                    }
                                 }
 
                                 RAID_REVIEW.trackingPlayers[trackingPlayer.profileId] = trackingPlayer;
                                 RAID_REVIEW.updatedBots[trackingPlayer.profileId] = trackingPlayer;
-                                LoggerInstance.Log.LogInfo($"RAID_REVIEW :::: INFO :::: Updating player {trackingPlayer.name} with brain {trackingPlayer.mod_SAIN_brain}, type {trackingPlayer.type}, difficulty {trackingPlayer.mod_SAIN_difficulty}");
+                                LoggerInstance.Log.LogInfo($"RAID_REVIEW :::: INFO :::: Updating player {trackingPlayer.name} with brain {trackingPlayer.mod_SAIN_brain}, type {trackingPlayer.type}, difficulty {trackingPlayer.mod_SAIN_difficulty}, sainName {trackingPlayer.mod_SAIN_name}");
                                 _ = Telemetry.Send("PLAYER_UPDATE", JsonConvert.SerializeObject(trackingPlayer));
                             }
                         }
@@ -460,6 +469,37 @@ namespace RAID_REVIEW
             }
 
             return RR_WildSpawnType;
+        }
+
+        // Reads SAIN's per-WildSpawnType display name (e.g. "ISB Operator") from SAIN's
+        // static BotTypeDefinitions registry. MoreBotsAPI copies a faction mod's custom
+        // SAIN settings into SAIN's native BotType (keyed by WildSpawnType), so this is the
+        // author-controlled name shown in SAIN's settings menu. Returns "" when SAIN isn't
+        // present or the type isn't registered (we use ContainsKey, never GetBotType, to
+        // avoid SAIN's "assault"/Scav fallback).
+        public static string getSainBotTypeName(object profile)
+        {
+            try
+            {
+                if (profile == null) return "";
+
+                var wildSpawnType = profile.GetType().GetProperty("WildSpawnType")?.GetValue(profile)
+                                 ?? profile.GetType().GetField("WildSpawnType")?.GetValue(profile);
+                if (wildSpawnType == null) return "";
+
+                Type botTypeDefsType = Type.GetType("SAIN.Preset.BotTypeDefinitions, SAIN");
+                var botTypes = botTypeDefsType?.GetField("BotTypes", BindingFlags.Public | BindingFlags.Static)?.GetValue(null) as IDictionary;
+                if (botTypes == null || !botTypes.Contains(wildSpawnType)) return "";
+
+                var botType = botTypes[wildSpawnType];
+                var name = botType?.GetType().GetField("Name", BindingFlags.Public | BindingFlags.Instance)?.GetValue(botType) as string;
+                return name ?? "";
+            }
+            catch (Exception e)
+            {
+                LoggerInstance.Log?.LogError($"RAID_REVIEW :::: ERROR :::: getSainBotTypeName: {e}");
+                return "";
+            }
         }
 
 

@@ -525,6 +525,9 @@ public class DatabaseService : IDisposable
                 CREATE INDEX IF NOT EXISTS idx_orbit_bot_objective_raidId ON orbit_bot_objective(""raidId"");
                 CREATE INDEX IF NOT EXISTS idx_orbit_main_objectives_raidId ON orbit_main_objectives(""raidId"");
             "),
+            ("add_mod_sain_name", @"
+                ALTER TABLE player ADD COLUMN ""mod_SAIN_name"" TEXT NOT NULL DEFAULT '';
+            "),
         };
 
         foreach (var (name, sql) in migrations)

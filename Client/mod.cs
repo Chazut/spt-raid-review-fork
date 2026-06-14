@@ -799,7 +799,8 @@ namespace RAID_REVIEW
                                 spawnTime = stopwatch.ElapsedMilliseconds,
                                 type = player.IsAI ? "BOT" : "HUMAN",
                                 mod_SAIN_brain = "UNKNOWN",
-                                mod_SAIN_difficulty = ""
+                                mod_SAIN_difficulty = "",
+                                mod_SAIN_name = ""
                             };
 
                             if (player.Side == EPlayerSide.Savage)

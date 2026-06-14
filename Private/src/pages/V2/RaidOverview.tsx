@@ -369,11 +369,16 @@ export default function RaidOverview() {
           }
 
           // ISB only: its WildSpawnType names are misleading (variants reuse the
-          // boss-roster slot names), so show the SAIN "difficulty - personality" like
-          // regular bots instead of the role.
+          // boss-roster slot names). Prefer SAIN's author-controlled bot-type name
+          // (e.g. "ISB Operator"), appending the SAIN personality when known; if no
+          // SAIN name was captured, fall back to the "difficulty - personality" string.
           if (category === "ISB") {
+            const sainName = (player.mod_SAIN_name || "").trim();
             const personality = (player.mod_SAIN_brain || "").trim();
             const hasPersonality = personality !== "" && !["UNKNOWN", "PMC", "SCAV", "PLAYER"].includes(personality);
+            if (sainName !== "") {
+              return hasPersonality ? `${sainName} - ${personality}` : sainName;
+            }
             if (hasPersonality) brain = personality;
           }
 

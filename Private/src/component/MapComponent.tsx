@@ -2789,8 +2789,12 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             if (classifyPlayer(player) === 'FACTION') {
                 const category = typeof player.type === 'string' && player.type.includes('|') ? player.type.split('|')[1] : ''
                 if (category === 'ISB') {
+                    const sainName = (player.mod_SAIN_name || '').trim()
                     const personality = (player.mod_SAIN_brain || '').trim()
                     const hasPersonality = personality !== '' && !['UNKNOWN', 'PMC', 'SCAV', 'PLAYER'].includes(personality)
+                    if (sainName !== '') {
+                        return hasPersonality ? `${sainName} - ${personality}` : sainName
+                    }
                     if (hasPersonality) brain = personality
                 } else {
                     const role = getFactionRole(player)

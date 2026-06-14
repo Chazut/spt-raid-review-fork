@@ -169,9 +169,10 @@ public class WsPacketHandler
                 case "PLAYER_UPDATE":
                 {
                     await _db.ExecuteAsync(
-                        "UPDATE player SET mod_SAIN_brain = $brain, mod_SAIN_difficulty = $diff, type = $type WHERE raidId = $raidId AND profileId = $profileId",
+                        "UPDATE player SET mod_SAIN_brain = $brain, mod_SAIN_difficulty = $diff, mod_SAIN_name = $sainName, type = $type WHERE raidId = $raidId AND profileId = $profileId",
                         ("$brain", GetString(payload, "mod_SAIN_brain")),
                         ("$diff", GetString(payload, "mod_SAIN_difficulty")),
+                        ("$sainName", GetString(payload, "mod_SAIN_name")),
                         ("$type", GetString(payload, "type")),
                         ("$raidId", raidId!),
                         ("$profileId", GetString(payload, "profileId")));
@@ -195,7 +196,7 @@ public class WsPacketHandler
                     // Dedup rides on the UNIQUE (raidId, profileId) index — the old SELECT round-trip
                     // full-scanned the player table once per bot spawn (spawn waves = burst of scans).
                     await _db.ExecuteAsync(
-                        @"INSERT OR IGNORE INTO player (raidId, profileId, level, team, name, ""group"", spawnTime, type, mod_SAIN_brain, mod_SAIN_difficulty) VALUES ($raidId, $profileId, $level, $team, $name, $group, $spawnTime, $type, $brain, $diff)",
+                        @"INSERT OR IGNORE INTO player (raidId, profileId, level, team, name, ""group"", spawnTime, type, mod_SAIN_brain, mod_SAIN_difficulty, mod_SAIN_name) VALUES ($raidId, $profileId, $level, $team, $name, $group, $spawnTime, $type, $brain, $diff, $sainName)",
                         ("$raidId", raidId!),
                         ("$profileId", profileId),
                         ("$level", GetString(payload, "level")),
@@ -205,7 +206,8 @@ public class WsPacketHandler
                         ("$spawnTime", GetString(payload, "spawnTime")),
                         ("$type", GetString(payload, "type")),
                         ("$brain", GetString(payload, "mod_SAIN_brain")),
-                        ("$diff", GetString(payload, "mod_SAIN_difficulty")));
+                        ("$diff", GetString(payload, "mod_SAIN_difficulty")),
+                        ("$sainName", GetString(payload, "mod_SAIN_name")));
                     break;
                 }
 
@@ -459,7 +461,7 @@ public class WsPacketHandler
         if (exists.Count > 0) return;
 
         await _db.ExecuteAsync(
-            @"INSERT INTO player (raidId, profileId, level, team, name, ""group"", spawnTime, mod_SAIN_brain, type, mod_SAIN_difficulty) VALUES ($raidId, $profileId, $level, $team, $name, $group, $spawnTime, $brain, $type, $diff)",
+            @"INSERT INTO player (raidId, profileId, level, team, name, ""group"", spawnTime, mod_SAIN_brain, type, mod_SAIN_difficulty, mod_SAIN_name) VALUES ($raidId, $profileId, $level, $team, $name, $group, $spawnTime, $brain, $type, $diff, $sainName)",
             ("$raidId", raidId),
             ("$profileId", profileId),
             ("$level", GetString(playerEl, "level")),
@@ -469,7 +471,8 @@ public class WsPacketHandler
             ("$spawnTime", GetString(playerEl, "spawnTime")),
             ("$brain", GetString(playerEl, "mod_SAIN_brain")),
             ("$type", GetString(playerEl, "type")),
-            ("$diff", GetString(playerEl, "mod_SAIN_difficulty")));
+            ("$diff", GetString(playerEl, "mod_SAIN_difficulty")),
+            ("$sainName", GetString(playerEl, "mod_SAIN_name")));
     }
 
     private static string GetString(JsonElement el, string key)
