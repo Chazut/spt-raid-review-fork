@@ -77,6 +77,14 @@ namespace RAID_REVIEW {
                     LoggerInstance.Log.LogInfo("RAID_REVIEW :::: INFO :::: Found 'Black Division'.");
                     RAID_REVIEW.RAID_REVIEW__DETECTED_MODS.Add("BLACK_DIVISION");
                 }
+                // ISB SOF ships several plugins (ISBSpecialForces / ISBNotify / ISBSOF_Extras)
+                // whose GUIDs vary by version and com.-prefix, so match any loaded plugin
+                // whose GUID contains "isb" rather than guessing one exact id.
+                if (RAID_REVIEW.DetectModContaining("isb"))
+                {
+                    LoggerInstance.Log.LogInfo("RAID_REVIEW :::: INFO :::: Found 'ISB SOF'.");
+                    RAID_REVIEW.RAID_REVIEW__DETECTED_MODS.Add("ISB");
+                }
                 LoggerInstance.Log.LogInfo("RAID_REVIEW :::: INFO :::: Finished Searching For Supported Mods");
             }
             LoggerInstance.Log.LogInfo("RAID_REVIEW :::: INFO :::: RAID Settings Loaded");

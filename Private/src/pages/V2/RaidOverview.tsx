@@ -460,7 +460,11 @@ export default function RaidOverview() {
         return groupedBy.map((gp, groupIndex) => {
           const sorted = sortPlayers(gp);
           return sorted.map((p, index) => {
-            const SAIN = getPlayerDifficultyAndBrain(p).toLowerCase();
+            // No .toLowerCase() here: the `capitalize` CSS on the cell only upper-cases
+            // the first letter of each word, so lower-casing first would mangle all-caps
+            // labels like "ISB" into "Isb". The map legend doesn't lower-case either, so
+            // this keeps the two views consistent.
+            const SAIN = getPlayerDifficultyAndBrain(p);
             const isMainPlayer = p.profileId === raid.profileId;
             const lastSample = lastSampleByProfile.get(p.profileId) ?? 0;
             const lastStatus = lastStatusByProfile.get(p.profileId) ?? '';

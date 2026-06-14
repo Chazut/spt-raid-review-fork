@@ -1099,6 +1099,15 @@ namespace RAID_REVIEW
             if (Chainloader.PluginInfos.ContainsKey(modName)) return true;
             return false;
         }
+        // ISB SOF ships several plugins (ISBSpecialForces / ISBNotify / ISBSOF_Extras)
+        // whose GUIDs vary by version and com.-prefix, so match any loaded plugin whose
+        // GUID contains the substring instead of relying on one exact id.
+        public static bool DetectModContaining(string substring)
+        {
+            foreach (var key in Chainloader.PluginInfos.Keys)
+                if (key.IndexOf(substring, System.StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            return false;
+        }
         public static bool MapLoaded() => Singleton<GameWorld>.Instantiated;
 
     }
