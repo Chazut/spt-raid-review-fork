@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Threading.Channels;
 using Microsoft.Data.Sqlite;
 
 namespace RaidReview.Database;
@@ -9,6 +10,17 @@ public class DatabaseService : IDisposable
     private SqliteConnection? _connection;
     private string _dbPath = string.Empty;
     private static IntPtr _nativeSqliteHandle;
+    private Action<string>? _log;
+
+    // Write-behind queue for high-rate single-row inserts (BALLISTIC during firefights, PLAYER_STATUS).
+    // Producers enqueue and return immediately; one drain task coalesces ~250ms windows into a single
+    // transaction per statement shape, collapsing dozens of per-row commits into one. Order within a
+    // table is preserved (single reader). Bounded staleness: rows are visible at most ~250ms late,
+    // which nothing reads that fast mid-raid.
+    private readonly Channel<(string sql, (string name, object? value)[] parameters)> _writeBehind =
+        Channel.CreateUnbounded<(string, (string, object?)[])>(new UnboundedChannelOptions { SingleReader = true });
+    private Task? _writeBehindDrainTask;
+    private readonly CancellationTokenSource _writeBehindCts = new();
 
     public async Task InitializeAsync(string dataFolder, Action<string>? log = null)
     {
@@ -73,10 +85,85 @@ public class DatabaseService : IDisposable
         Directory.CreateDirectory(dataFolder);
         _dbPath = Path.Combine(dataFolder, "raid_review_mod.db");
 
-        _connection = new SqliteConnection($"Data Source={_dbPath}");
+        // Connection string with pooling so per-call connections in
+        // ExecuteAsync / QueryAsync get reused from the pool instead of
+        // re-opening the file each time. Cache=Shared lets the same
+        // in-memory page cache be shared across pooled connections.
+        _connectionString = $"Data Source={_dbPath};Pooling=True;Cache=Shared";
+        _connection = new SqliteConnection(_connectionString);
         await _connection.OpenAsync();
 
+        // WAL mode allows one writer + many concurrent readers without
+        // blocking on the same write lock. busy_timeout makes any caller
+        // wait up to 5s for the lock instead of erroring instantly, which
+        // is what was starving the Kestrel thread pool: every concurrent
+        // ws packet handler was serialising through the single shared
+        // connection's exclusive write lock.
+        await ExecuteOnAsync(_connection, "PRAGMA journal_mode = WAL;");
+        await ExecuteOnAsync(_connection, "PRAGMA busy_timeout = 5000;");
+        await ExecuteOnAsync(_connection, "PRAGMA synchronous = NORMAL;");
+        // temp_store = MEMORY keeps SQLite's transient indexes, sort scratch and intermediate result sets
+        // off the physical disk and in process RAM. Reported as a meaningful speedup on slow / write-through
+        // RAID arrays (Krelsis.net, Discord) where every disk write is a synchronous round-trip — moving
+        // the throwaway temp data out of that path takes a significant chunk of small writes off the I/O
+        // queue. Costs a small amount of RAM (typically a few hundred KB) and zero risk: the data is
+        // by definition temporary and doesn't survive a transaction commit.
+        await ExecuteOnAsync(_connection, "PRAGMA temp_store = MEMORY;");
+
         await RunMigrationsAsync();
+
+        _log = log;
+        _writeBehindDrainTask = Task.Run(() => DrainWriteBehindAsync(_writeBehindCts.Token));
+    }
+
+    /// <summary>
+    /// Fire-and-forget insert for high-rate event streams. The statement lands within ~250ms,
+    /// batched with everything else queued in that window. Use ExecuteAsync when the caller
+    /// needs the row visible immediately (raid lifecycle, dedup-sensitive writes).
+    /// </summary>
+    public void QueueWrite(string sql, params (string name, object? value)[] parameters)
+        => _writeBehind.Writer.TryWrite((sql, parameters));
+
+    private async Task DrainWriteBehindAsync(CancellationToken ct)
+    {
+        var pending = new List<(string sql, (string name, object? value)[] parameters)>(256);
+        while (true)
+        {
+            try
+            {
+                if (!await _writeBehind.Reader.WaitToReadAsync(ct)) return;
+                // Coalesce the burst: grab what's there, give the window a moment to fill, grab again.
+                while (_writeBehind.Reader.TryRead(out var item)) pending.Add(item);
+                await Task.Delay(250, ct);
+                while (_writeBehind.Reader.TryRead(out var item)) pending.Add(item);
+
+                foreach (var group in pending.GroupBy(p => p.sql))
+                    await ExecuteBatchAsync(group.Key, group.Select(g => g.parameters));
+                pending.Clear();
+            }
+            catch (OperationCanceledException)
+            {
+                // Shutdown: push whatever is still queued before letting go.
+                while (_writeBehind.Reader.TryRead(out var item)) pending.Add(item);
+                foreach (var group in pending.GroupBy(p => p.sql))
+                    try { await ExecuteBatchAsync(group.Key, group.Select(g => g.parameters)); } catch { /* best effort on shutdown */ }
+                return;
+            }
+            catch (Exception ex)
+            {
+                _log?.Invoke($"[DB] write-behind drain error ({pending.Count} rows dropped): {ex.Message}");
+                pending.Clear();
+            }
+        }
+    }
+
+    private string _connectionString = string.Empty;
+
+    private static async Task ExecuteOnAsync(SqliteConnection conn, string sql)
+    {
+        using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        await cmd.ExecuteNonQueryAsync();
     }
 
     public SqliteConnection Connection => _connection ?? throw new InvalidOperationException("Database not initialized.");
@@ -418,6 +505,29 @@ public class DatabaseService : IDisposable
                     FOREIGN KEY (""raidId"") REFERENCES raid(""raidId"")
                 );
             "),
+            // Every UI / API read filters on raidId, but only raid + loose_loot were indexed — the
+            // raid-detail endpoints full-scanned every table, slower with each raid the GC keeps.
+            // The player dedup (raidId, profileId) is UNIQUE so the PLAYER packet handler can use a
+            // bare INSERT OR IGNORE instead of its per-spawn SELECT round-trip; the DELETE clears any
+            // duplicate rows that slipped in before this index existed (concurrent PLAYER packets).
+            ("add_raid_id_indexes", @"
+                DELETE FROM player WHERE rowid NOT IN (SELECT MIN(rowid) FROM player GROUP BY raidId, profileId);
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_player_raid_profile ON player(""raidId"", ""profileId"");
+                CREATE INDEX IF NOT EXISTS idx_kills_raidId ON kills(""raidId"");
+                CREATE INDEX IF NOT EXISTS idx_looting_raidId ON looting(""raidId"");
+                CREATE INDEX IF NOT EXISTS idx_ballistic_raidId ON ballistic(""raidId"");
+                CREATE INDEX IF NOT EXISTS idx_player_status_raidId ON player_status(""raidId"");
+                CREATE INDEX IF NOT EXISTS idx_player_inventory_raidId ON player_inventory(""raidId"");
+                CREATE INDEX IF NOT EXISTS idx_bot_quest_raidId ON bot_quest(""raidId"");
+                CREATE INDEX IF NOT EXISTS idx_bot_objective_raidId ON bot_objective(""raidId"");
+                CREATE INDEX IF NOT EXISTS idx_phobos_field_raidId ON phobos_field(""raidId"");
+                CREATE INDEX IF NOT EXISTS idx_orbit_field_raidId ON orbit_field(""raidId"");
+                CREATE INDEX IF NOT EXISTS idx_orbit_bot_objective_raidId ON orbit_bot_objective(""raidId"");
+                CREATE INDEX IF NOT EXISTS idx_orbit_main_objectives_raidId ON orbit_main_objectives(""raidId"");
+            "),
+            ("add_mod_sain_name", @"
+                ALTER TABLE player ADD COLUMN ""mod_SAIN_name"" TEXT NOT NULL DEFAULT '';
+            "),
         };
 
         foreach (var (name, sql) in migrations)
@@ -451,16 +561,51 @@ public class DatabaseService : IDisposable
 
     public async Task ExecuteAsync(string sql, params (string name, object? value)[] parameters)
     {
-        using var cmd = _connection!.CreateCommand();
+        // Per-call connection from the pool: previously every WS packet
+        // handler was contending on the single shared _connection, which
+        // serialised every DB write behind SQLite's exclusive write lock
+        // and starved the Kestrel thread pool. With pooling + WAL mode
+        // each handler grabs its own connection, runs its statement, and
+        // releases — the pool reuses opened handles so it's cheap.
+        using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         foreach (var (name, value) in parameters)
             cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
         await cmd.ExecuteNonQueryAsync();
     }
 
+    /// <summary>
+    /// Bulk INSERT helper: wraps N executions in a single transaction so
+    /// the per-row fsync cost collapses into one. Used by LOOSE_LOOT
+    /// which can land hundreds of items per packet — without batching,
+    /// each INSERT acquires the write lock + fsyncs the journal, killing
+    /// the thread pool under load.
+    /// </summary>
+    public async Task ExecuteBatchAsync(string sql, IEnumerable<(string name, object? value)[]> parameterSets)
+    {
+        using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync();
+        using var tx = (SqliteTransaction)await conn.BeginTransactionAsync();
+        using var cmd = conn.CreateCommand();
+        cmd.Transaction = tx;
+        cmd.CommandText = sql;
+        foreach (var paramSet in parameterSets)
+        {
+            cmd.Parameters.Clear();
+            foreach (var (name, value) in paramSet)
+                cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
+            await cmd.ExecuteNonQueryAsync();
+        }
+        await tx.CommitAsync();
+    }
+
     public async Task<List<Dictionary<string, object?>>> QueryAsync(string sql, params (string name, object? value)[] parameters)
     {
-        using var cmd = _connection!.CreateCommand();
+        using var conn = new SqliteConnection(_connectionString);
+        await conn.OpenAsync();
+        using var cmd = conn.CreateCommand();
         cmd.CommandText = sql;
         foreach (var (name, value) in parameters)
             cmd.Parameters.AddWithValue(name, value ?? DBNull.Value);
@@ -485,6 +630,10 @@ public class DatabaseService : IDisposable
 
     public void Dispose()
     {
+        // Stop the write-behind drain and give it a moment to flush what's queued.
+        _writeBehindCts.Cancel();
+        try { _writeBehindDrainTask?.Wait(TimeSpan.FromSeconds(3)); }
+        catch (AggregateException) { }
         _connection?.Dispose();
     }
 }

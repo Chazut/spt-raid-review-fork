@@ -259,6 +259,38 @@
         "name": "Black Div Support",
         "type": "BLACKDIV"
     },
+    "ISB SPECIAL FORCES|ISB": {
+        "name": "ISB Special Forces",
+        "type": "ISB"
+    },
+    "ISB TEAM LEADER|ISB": {
+        "name": "ISB Team Leader",
+        "type": "ISB"
+    },
+    "ISB SECOND LEADER|ISB": {
+        "name": "ISB Second Leader",
+        "type": "ISB"
+    },
+    "ISB FIREFLY|ISB": {
+        "name": "ISB Firefly",
+        "type": "ISB"
+    },
+    "ISB FIREFLY LOGHAN|ISB": {
+        "name": "ISB Firefly Loghan",
+        "type": "ISB"
+    },
+    "ISB FIREFLY VIPPER|ISB": {
+        "name": "ISB Firefly Vipper",
+        "type": "ISB"
+    },
+    "ISB FIREFLY SHIELDER 1|ISB": {
+        "name": "ISB Firefly Shielder 1",
+        "type": "ISB"
+    },
+    "ISB FIREFLY SHIELDER 2|ISB": {
+        "name": "ISB Firefly Shielder 2",
+        "type": "ISB"
+    },
     "UNKNOWN": {
         "name": "",
         "type": ""

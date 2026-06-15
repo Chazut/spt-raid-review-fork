@@ -156,6 +156,17 @@ namespace RAID_REVIEW
                 case "blackDivAssault": return "BLACK DIV ASSAULT|BLACKDIV";
                 case "blackDivBreacher": return "BLACK DIV BREACHER|BLACKDIV";
                 case "blackDivSupport": return "BLACK DIV SUPPORT|BLACKDIV";
+                // ISB faction mod. Custom WildSpawnType member names (role.ToString() yields the
+                // member name for these, same as the other faction mods above). Future Firefly squad
+                // members are mapped ahead of the mod shipping them.
+                case "ISBSpecialForces": return "ISB SPECIAL FORCES|ISB";
+                case "ISBTeamLeader": return "ISB TEAM LEADER|ISB";
+                case "ISBSecondLeader": return "ISB SECOND LEADER|ISB";
+                case "ISBFirefly": return "ISB FIREFLY|ISB";
+                case "ISBFireflyFollowerLoghan": return "ISB FIREFLY LOGHAN|ISB";
+                case "ISBFireflyFollowerVipper": return "ISB FIREFLY VIPPER|ISB";
+                case "ISBFireflyShielder01": return "ISB FIREFLY SHIELDER 1|ISB";
+                case "ISBFireflyShielder02": return "ISB FIREFLY SHIELDER 2|ISB";
                 default: return role.ToString().ToUpper() + "|FACTION_MOD";
             }
         }
@@ -708,6 +719,7 @@ namespace RAID_REVIEW
                                 _seenLayerNames.Clear();
                                 sessionId = null;
                                 stopwatch.Reset();
+                                if (ORBIT__DETECTED) Orbit_Integration.ResetSessionState();
                             }
                         }
                         continue;
@@ -787,7 +799,8 @@ namespace RAID_REVIEW
                                 spawnTime = stopwatch.ElapsedMilliseconds,
                                 type = player.IsAI ? "BOT" : "HUMAN",
                                 mod_SAIN_brain = "UNKNOWN",
-                                mod_SAIN_difficulty = ""
+                                mod_SAIN_difficulty = "",
+                                mod_SAIN_name = ""
                             };
 
                             if (player.Side == EPlayerSide.Savage)
@@ -1084,6 +1097,15 @@ namespace RAID_REVIEW
         public static bool DetectMod(string modName)
         {
             if (Chainloader.PluginInfos.ContainsKey(modName)) return true;
+            return false;
+        }
+        // ISB SOF ships several plugins (ISBSpecialForces / ISBNotify / ISBSOF_Extras)
+        // whose GUIDs vary by version and com.-prefix, so match any loaded plugin whose
+        // GUID contains the substring instead of relying on one exact id.
+        public static bool DetectModContaining(string substring)
+        {
+            foreach (var key in Chainloader.PluginInfos.Keys)
+                if (key.IndexOf(substring, System.StringComparison.OrdinalIgnoreCase) >= 0) return true;
             return false;
         }
         public static bool MapLoaded() => Singleton<GameWorld>.Instantiated;

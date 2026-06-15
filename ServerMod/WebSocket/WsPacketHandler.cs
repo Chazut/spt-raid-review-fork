@@ -147,6 +147,9 @@ public class WsPacketHandler
 
                     _sessionManager.RemoveRaid(raidId!, "Received 'onGameSessionEnd' packet from Raid-Review client mod.");
 
+                    // Publish the buffered position stream before post-processing reads the CSV.
+                    _fileService.FlushAndCloseAll();
+
                     _startPostProcessing?.Invoke(raidId!);
                     _logger.Log("Enabled Post Processing: Raid Finished");
                     break;
@@ -166,9 +169,10 @@ public class WsPacketHandler
                 case "PLAYER_UPDATE":
                 {
                     await _db.ExecuteAsync(
-                        "UPDATE player SET mod_SAIN_brain = $brain, mod_SAIN_difficulty = $diff, type = $type WHERE raidId = $raidId AND profileId = $profileId",
+                        "UPDATE player SET mod_SAIN_brain = $brain, mod_SAIN_difficulty = $diff, mod_SAIN_name = $sainName, type = $type WHERE raidId = $raidId AND profileId = $profileId",
                         ("$brain", GetString(payload, "mod_SAIN_brain")),
                         ("$diff", GetString(payload, "mod_SAIN_difficulty")),
+                        ("$sainName", GetString(payload, "mod_SAIN_name")),
                         ("$type", GetString(payload, "type")),
                         ("$raidId", raidId!),
                         ("$profileId", GetString(payload, "profileId")));
@@ -177,7 +181,7 @@ public class WsPacketHandler
 
                 case "PLAYER_STATUS":
                 {
-                    await _db.ExecuteAsync(
+                    _db.QueueWrite(
                         "INSERT INTO player_status (raidId, profileId, time, status) VALUES ($raidId, $profileId, $time, $status)",
                         ("$raidId", raidId!),
                         ("$profileId", GetString(payload, "profileId")),
@@ -189,14 +193,10 @@ public class WsPacketHandler
                 case "PLAYER":
                 {
                     var profileId = GetString(payload, "profileId");
-                    var exists = await _db.QueryAsync(
-                        "SELECT * FROM player WHERE raidId = $raidId AND profileId = $profileId",
-                        ("$raidId", raidId!), ("$profileId", profileId));
-
-                    if (exists.Count > 0) break;
-
+                    // Dedup rides on the UNIQUE (raidId, profileId) index — the old SELECT round-trip
+                    // full-scanned the player table once per bot spawn (spawn waves = burst of scans).
                     await _db.ExecuteAsync(
-                        @"INSERT INTO player (raidId, profileId, level, team, name, ""group"", spawnTime, type, mod_SAIN_brain, mod_SAIN_difficulty) VALUES ($raidId, $profileId, $level, $team, $name, $group, $spawnTime, $type, $brain, $diff)",
+                        @"INSERT OR IGNORE INTO player (raidId, profileId, level, team, name, ""group"", spawnTime, type, mod_SAIN_brain, mod_SAIN_difficulty, mod_SAIN_name) VALUES ($raidId, $profileId, $level, $team, $name, $group, $spawnTime, $type, $brain, $diff, $sainName)",
                         ("$raidId", raidId!),
                         ("$profileId", profileId),
                         ("$level", GetString(payload, "level")),
@@ -206,13 +206,16 @@ public class WsPacketHandler
                         ("$spawnTime", GetString(payload, "spawnTime")),
                         ("$type", GetString(payload, "type")),
                         ("$brain", GetString(payload, "mod_SAIN_brain")),
-                        ("$diff", GetString(payload, "mod_SAIN_difficulty")));
+                        ("$diff", GetString(payload, "mod_SAIN_difficulty")),
+                        ("$sainName", GetString(payload, "mod_SAIN_name")));
                     break;
                 }
 
                 case "BALLISTIC":
                 {
-                    await _db.ExecuteAsync(
+                    // Highest-rate DB stream in the mod (one row per round fired during firefights) —
+                    // write-behind coalesces the burst into one transaction per ~250ms window.
+                    _db.QueueWrite(
                         "INSERT INTO ballistic (raidId, time, profileId, weaponId, weaponName, ammoId, hitPlayerId, source, target) VALUES ($raidId, $time, $profileId, $weaponId, $weaponName, $ammoId, $hitPlayerId, $source, $target)",
                         ("$raidId", raidId!),
                         ("$time", GetString(payload, "time")),
@@ -248,7 +251,7 @@ public class WsPacketHandler
                     var filename = $"{raidId}_positions";
                     var keys = ExtractKeysLine(payload);
                     var values = ExtractValuesLine(payload);
-                    _fileService.WriteLineToFile("positions", "", "", filename, keys + "\n", values + "\n");
+                    _fileService.AppendLineBuffered("positions", "", "", filename, keys + "\n", values + "\n");
                     break;
                 }
 
@@ -276,11 +279,15 @@ public class WsPacketHandler
                     if (raidId == null) break;
                     if (payload.TryGetProperty("items", out var itemsArr) && itemsArr.ValueKind == JsonValueKind.Array)
                     {
+                        // Batch all inserts into one transaction — a raid
+                        // can ship hundreds of loose loot items in a
+                        // single packet and one-fsync-per-insert was a
+                        // major write-lock contention source.
+                        var batch = new List<(string name, object? value)[]>();
                         foreach (var item in itemsArr.EnumerateArray())
                         {
-                            await _db.ExecuteAsync(
-                                @"INSERT OR IGNORE INTO loose_loot (raidId, itemId, templateId, itemName, price, qty, x, y, z, inContainer, containerName)
-                                  VALUES ($raidId, $itemId, $templateId, $itemName, $price, $qty, $x, $y, $z, $inContainer, $containerName)",
+                            batch.Add(new (string name, object? value)[]
+                            {
                                 ("$raidId", raidId!),
                                 ("$itemId", GetString(item, "itemId")),
                                 ("$templateId", GetString(item, "templateId")),
@@ -291,7 +298,15 @@ public class WsPacketHandler
                                 ("$y", GetString(item, "y")),
                                 ("$z", GetString(item, "z")),
                                 ("$inContainer", item.TryGetProperty("inContainer", out var ic) && ic.GetBoolean() ? "1" : "0"),
-                                ("$containerName", GetString(item, "containerName")));
+                                ("$containerName", GetString(item, "containerName")),
+                            });
+                        }
+                        if (batch.Count > 0)
+                        {
+                            await _db.ExecuteBatchAsync(
+                                @"INSERT OR IGNORE INTO loose_loot (raidId, itemId, templateId, itemName, price, qty, x, y, z, inContainer, containerName)
+                                  VALUES ($raidId, $itemId, $templateId, $itemName, $price, $qty, $x, $y, $z, $inContainer, $containerName)",
+                                batch);
                         }
                     }
                     break;
@@ -446,7 +461,7 @@ public class WsPacketHandler
         if (exists.Count > 0) return;
 
         await _db.ExecuteAsync(
-            @"INSERT INTO player (raidId, profileId, level, team, name, ""group"", spawnTime, mod_SAIN_brain, type, mod_SAIN_difficulty) VALUES ($raidId, $profileId, $level, $team, $name, $group, $spawnTime, $brain, $type, $diff)",
+            @"INSERT INTO player (raidId, profileId, level, team, name, ""group"", spawnTime, mod_SAIN_brain, type, mod_SAIN_difficulty, mod_SAIN_name) VALUES ($raidId, $profileId, $level, $team, $name, $group, $spawnTime, $brain, $type, $diff, $sainName)",
             ("$raidId", raidId),
             ("$profileId", profileId),
             ("$level", GetString(playerEl, "level")),
@@ -456,7 +471,8 @@ public class WsPacketHandler
             ("$spawnTime", GetString(playerEl, "spawnTime")),
             ("$brain", GetString(playerEl, "mod_SAIN_brain")),
             ("$type", GetString(playerEl, "type")),
-            ("$diff", GetString(playerEl, "mod_SAIN_difficulty")));
+            ("$diff", GetString(playerEl, "mod_SAIN_difficulty")),
+            ("$sainName", GetString(playerEl, "mod_SAIN_name")));
     }
 
     private static string GetString(JsonElement el, string key)

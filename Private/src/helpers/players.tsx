@@ -35,6 +35,7 @@ export function getMarkerLabel(player: any): string | null {
     if (type.includes('RUAF')) return 'R'
     if (type.includes('UNTAR')) return 'U'
     if (type.includes('BLACK DIV')) return 'BD'
+    if (type.includes('ISB')) return 'IS'
 
     if (type.includes('SHADOW TAGILLA')) return 'ST'
     if (type.includes('VENGEFUL KILLA')) return 'VK'
@@ -96,6 +97,7 @@ export function getPlayerColor(player: any, index: number): string {
         case 'RUAF': return '#4A90D9'
         case 'UNTAR': return '#00BFFF'
         case 'BLACKDIV': return '#555555'
+        case 'ISB': return '#1ABC9C'
         case 'INFECTED': return '#7FFF00'
         default:
             if (player.type === 'PLAYER' && player.team === 'Savage') return '#33FF57'
@@ -126,7 +128,7 @@ export function getFactionRole(player: any): string {
     const typeName = ((player?.type || '') as string).split('|')[0]
     if (!typeName) return ''
     // Strip the known faction prefix (longest first so "BLACK DIV" matches before "BLACK")
-    const prefixes = ['BLACK DIV', 'RUAF', 'REMNANT', 'UNTAR', 'MERCENARY']
+    const prefixes = ['BLACK DIV', 'RUAF', 'REMNANT', 'UNTAR', 'MERCENARY', 'ISB']
     let role = typeName
     for (const p of prefixes) {
         if (typeName === p) { role = typeName; break }
@@ -173,6 +175,7 @@ export function getPlayerFaction(player: any): string {
         case 'RUAF': return 'RUAF'
         case 'UNTAR': return 'UNTAR'
         case 'BLACKDIV': return 'Black Div'
+        case 'ISB': return 'ISB'
         case 'INFECTED': return 'Infected'
         default: return 'Unknown'
     }

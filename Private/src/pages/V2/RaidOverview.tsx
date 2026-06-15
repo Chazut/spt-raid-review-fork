@@ -29,6 +29,7 @@ const FACTION_COLORS: Record<string, { color: string, label: string }> = {
     'RUAF':        { color: '#4A90D9', label: 'RUAF' },
     'UNTAR':       { color: '#00BFFF', label: 'UNTAR' },
     'BLACK DIV':   { color: '#555555', label: 'Black Div' },
+    'ISB':         { color: '#1ABC9C', label: 'ISB' },
     'SNIPER':      { color: '#00911a', label: 'Sniper' },
     'PLAYER SCAV': { color: '#33FF8D', label: 'P. Scav' },
     'INFECTED':    { color: '#7FFF00', label: 'Infected' },
@@ -209,7 +210,7 @@ export default function RaidOverview() {
         }
 
         if (groupedByType === 'TEAM') {
-          const SIDE_ORDER = ['Player', 'USEC', 'BEAR', 'P. Scav', 'Boss', 'Goon', 'Follower', 'Raider', 'Rogue', 'Cultist', 'Bloodhound', 'Special', 'Infected', 'Mercenary', 'RUAF', 'UNTAR', 'Black Div', 'Sniper', 'Scav'];
+          const SIDE_ORDER = ['Player', 'USEC', 'BEAR', 'P. Scav', 'Boss', 'Goon', 'Follower', 'Raider', 'Rogue', 'Cultist', 'Bloodhound', 'Special', 'Infected', 'Mercenary', 'RUAF', 'UNTAR', 'Black Div', 'ISB', 'Sniper', 'Scav'];
           const grouped = _.groupBy(raid.players, p => {
             if (p.profileId === raid.profileId) return 'Player';
             const isPMC = p.team === 'Usec' || p.team === 'Bear';
@@ -336,6 +337,8 @@ export default function RaidOverview() {
                   return "UNTAR"
               case 'BLACKDIV':
                   return "BLACK DIV"
+              case 'ISB':
+                  return "ISB"
               case 'INFECTED':
                   return "INFECTED"
               case 'SPECIAL':
@@ -357,11 +360,26 @@ export default function RaidOverview() {
           let difficulty = player.mod_SAIN_difficulty;
           let brain = getPlayerBrain(player);
 
-          // Faction-mod bots: show only their specific role (Rifleman, Grenadier, etc.)
+          // Faction-mod bots (RUAF, UNTAR, BLACKDIV, MERCENARY): show their specific
+          // role (Rifleman, Grenadier, etc.).
           const category = typeof player.type === "string" && player.type.includes("|") ? player.type.split("|")[1] : "";
           if (["RUAF", "UNTAR", "BLACKDIV", "MERCENARY"].includes(category)) {
             const role = getFactionRole(player);
             if (role) return role;
+          }
+
+          // ISB only: its WildSpawnType names are misleading (variants reuse the
+          // boss-roster slot names). Prefer SAIN's author-controlled bot-type name
+          // (e.g. "ISB Operator"), appending the SAIN personality when known; if no
+          // SAIN name was captured, fall back to the "difficulty - personality" string.
+          if (category === "ISB") {
+            const sainName = (player.mod_SAIN_name || "").trim();
+            const personality = (player.mod_SAIN_brain || "").trim();
+            const hasPersonality = personality !== "" && !["UNKNOWN", "PMC", "SCAV", "PLAYER"].includes(personality);
+            if (sainName !== "") {
+              return hasPersonality ? `${sainName} - ${personality}` : sainName;
+            }
+            if (hasPersonality) brain = personality;
           }
 
           if (difficulty !== null && difficulty !== "") {
@@ -442,7 +460,11 @@ export default function RaidOverview() {
         return groupedBy.map((gp, groupIndex) => {
           const sorted = sortPlayers(gp);
           return sorted.map((p, index) => {
-            const SAIN = getPlayerDifficultyAndBrain(p).toLowerCase();
+            // No .toLowerCase() here: the `capitalize` CSS on the cell only upper-cases
+            // the first letter of each word, so lower-casing first would mangle all-caps
+            // labels like "ISB" into "Isb". The map legend doesn't lower-case either, so
+            // this keeps the two views consistent.
+            const SAIN = getPlayerDifficultyAndBrain(p);
             const isMainPlayer = p.profileId === raid.profileId;
             const lastSample = lastSampleByProfile.get(p.profileId) ?? 0;
             const lastStatus = lastStatusByProfile.get(p.profileId) ?? '';
