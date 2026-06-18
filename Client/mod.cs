@@ -167,6 +167,10 @@ namespace RAID_REVIEW
                 case "ISBFireflyFollowerVipper": return "ISB FIREFLY VIPPER|ISB";
                 case "ISBFireflyShielder01": return "ISB FIREFLY SHIELDER 1|ISB";
                 case "ISBFireflyShielder02": return "ISB FIREFLY SHIELDER 2|ISB";
+                // Manimal's Combine Soldiers (com.manimal.combinesoldiers)
+                case "CombineSoldier": return "COMBINE SOLDIER|COMBINE";
+                case "CombineShotgunner": return "COMBINE SHOTGUNNER|COMBINE";
+                case "CombineElite": return "COMBINE ELITE|COMBINE";
                 default: return role.ToString().ToUpper() + "|FACTION_MOD";
             }
         }

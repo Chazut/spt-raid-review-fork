@@ -448,6 +448,17 @@ namespace RAID_REVIEW
                             RR_WildSpawnType = "ISB FIREFLY SHIELDER 2|ISB";
                             break;
 
+                        // Manimal's Combine Soldiers (mirror of MapWildSpawnType in mod.cs)
+                        case "CombineSoldier":
+                            RR_WildSpawnType = "COMBINE SOLDIER|COMBINE";
+                            break;
+                        case "CombineShotgunner":
+                            RR_WildSpawnType = "COMBINE SHOTGUNNER|COMBINE";
+                            break;
+                        case "CombineElite":
+                            RR_WildSpawnType = "COMBINE ELITE|COMBINE";
+                            break;
+
                         default:
                             // Graceful fallback for unknown custom faction mods
                             RR_WildSpawnType = wildSpawnType.ToString().ToUpper() + "|FACTION_MOD";

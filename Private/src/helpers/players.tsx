@@ -98,6 +98,7 @@ export function getPlayerColor(player: any, index: number): string {
         case 'UNTAR': return '#00BFFF'
         case 'BLACKDIV': return '#555555'
         case 'ISB': return '#1ABC9C'
+        case 'COMBINE': return '#4B6584'
         case 'INFECTED': return '#7FFF00'
         default:
             if (player.type === 'PLAYER' && player.team === 'Savage') return '#33FF57'
