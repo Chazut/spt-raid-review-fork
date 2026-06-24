@@ -1001,7 +1001,9 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                         }
                     }
                     const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})${healthLine}${behaviorLine}${extractLine}${lootLine}`
-                    const ringColor = behaviorCat && behaviorCat.key !== 'idle' && behaviorCat.key !== 'patrol' && behaviorCat.key !== 'orbit' ? behaviorCat.color : undefined
+                    // 'orbit' keeps its green ring (marks an ORBIT-controlled bot); only 'idle' and vanilla
+                    // 'patrol' stay ring-less as the calm default state.
+                    const ringColor = behaviorCat && behaviorCat.key !== 'idle' && behaviorCat.key !== 'patrol' ? behaviorCat.color : undefined
                     const hpPct = (currentHealth != null && maxHealth != null && maxHealth > 0) ? Math.round((currentHealth / maxHealth) * 100) : undefined
                     const isFocused = playerFocusRef.current === playerId
                     let marker = playerMarkersRef.current.get(playerId)
