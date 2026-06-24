@@ -954,7 +954,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                     }
                     if (showBehavior && !isBTR) {
                         behaviorCat = getBehaviorCategory(currentDecision)
-                        behaviorLine = `<br/><span style="color:${behaviorCat.color}">${behaviorCat.label}</span>${currentDecision ? ': ' + formatDecisionLabel(currentDecision) : ''}`
+                        const decisionLabel = currentDecision ? formatDecisionLabel(currentDecision) : ''
+                        behaviorLine = `<br/><span style="color:${behaviorCat.color}">${behaviorCat.label}</span>${decisionLabel ? ': ' + decisionLabel : ''}`
                     }
                     if (currentHealth != null && maxHealth != null && maxHealth > 0) {
                         const pct = Math.round((currentHealth / maxHealth) * 100)
@@ -1000,7 +1001,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                         }
                     }
                     const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})${healthLine}${behaviorLine}${extractLine}${lootLine}`
-                    const ringColor = behaviorCat && behaviorCat.key !== 'idle' && behaviorCat.key !== 'patrol' ? behaviorCat.color : undefined
+                    const ringColor = behaviorCat && behaviorCat.key !== 'idle' && behaviorCat.key !== 'patrol' && behaviorCat.key !== 'orbit' ? behaviorCat.color : undefined
                     const hpPct = (currentHealth != null && maxHealth != null && maxHealth > 0) ? Math.round((currentHealth / maxHealth) * 100) : undefined
                     const isFocused = playerFocusRef.current === playerId
                     let marker = playerMarkersRef.current.get(playerId)

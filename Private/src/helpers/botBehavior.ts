@@ -10,6 +10,7 @@ export const BEHAVIOR_CATEGORIES: Record<string, BehaviorCategory> = {
     movement: { key: 'movement', label: 'Movement', color: '#3B82F6' },
     cover:    { key: 'cover',    label: 'Cover',    color: '#0EA5E9' },
     patrol:   { key: 'patrol',   label: 'Patrol',   color: '#22C55E' },
+    orbit:    { key: 'orbit',    label: 'Orbiting', color: '#22C55E' },
     medical:  { key: 'medical',  label: 'Medical',  color: '#EC4899' },
     loot:     { key: 'loot',     label: 'Loot',     color: '#FACC15' },
     flee:     { key: 'flee',     label: 'Flee',     color: '#A855F7' },
@@ -107,6 +108,7 @@ export function getBehaviorCategory(decision: string | undefined | null): Behavi
         if (cat === 'ContainerLoot' || cat === 'LooseLoot' || cat === 'Corpse') return BEHAVIOR_CATEGORIES.loot
         if (cat === 'Quest') return BEHAVIOR_CATEGORIES.quest
         if (cat === 'Exfil') return BEHAVIOR_CATEGORIES.extract
+        if (cat === 'Synthetic') return BEHAVIOR_CATEGORIES.orbit
         return BEHAVIOR_CATEGORIES.movement
     }
     const cleanDecision = decision.startsWith('SAIN:') ? decision.substring(5) : decision
@@ -136,7 +138,12 @@ export function formatDecisionLabel(decision: string | undefined | null): string
     if (decision.startsWith('LootingBots:')) return decision.substring(12)
     if (decision.startsWith('BL:')) return decision.substring(3).replace(/^Bot/, '').replace(/Layer$/, '')
     if (decision.startsWith('Phobos:')) return formatObjectiveCategory(decision.substring(7))
-    if (decision.startsWith('Orbit:'))  return formatObjectiveCategory(decision.substring(6))
+    if (decision.startsWith('Orbit:')) {
+        // ORBIT patrolling renders as just the green "Orbiting" category label (Shynd's pun) — no redundant
+        // ": Patrolling" suffix after it.
+        const cat = decision.substring(6)
+        return cat === 'Synthetic' ? '' : formatObjectiveCategory(cat)
+    }
     const clean = decision.startsWith('SAIN:') ? decision.substring(5) : decision
     // Convert camelCase to readable: "shootFromPlace" -> "Shoot From Place"
     return clean.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim()
