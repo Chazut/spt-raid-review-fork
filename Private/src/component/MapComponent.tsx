@@ -1993,7 +1993,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             'ContainerLoot': { icon: '\u{1F4E6}', color: '#FACC15' }, // package, yellow
             'LooseLoot':     { icon: '\u{1F48E}', color: '#FBBF24' }, // gem, amber
             'Quest':         { icon: '\u{1F4CB}', color: '#D946EF' }, // clipboard, fuchsia
-            'Synthetic':     { icon: '\u{1F500}', color: '#38BDF8' }, // shuffle, sky
+            'Synthetic':     { icon: '\u{1F500}', color: '#22C55E' }, // shuffle, green (ORBIT theme)
             'Exfil':         { icon: '\u{1F6AA}', color: '#2DD4BF' }, // door, teal
         }
 
@@ -3352,7 +3352,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                             <span style={{ color: '#FACC15' }}>{'●'} Container</span>
                                             <span style={{ color: '#FBBF24' }}>{'●'} Loose Loot</span>
                                             <span style={{ color: '#D946EF' }}>{'●'} Quest</span>
-                                            <span style={{ color: '#38BDF8' }}>{'●'} Synthetic</span>
+                                            <span style={{ color: '#22C55E' }}>{'●'} Synthetic</span>
                                             <span style={{ color: '#2DD4BF' }}>{'●'} Exfil</span>
                                         </div>
                                         <div style={{ maxHeight: '250px', overflowY: 'auto', borderTop: '1px solid rgba(154,136,102,0.2)', paddingTop: '4px' }}>
@@ -3371,7 +3371,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                 }
                                                 const catColor: Record<string, string> = {
                                                     'ContainerLoot': '#FACC15', 'LooseLoot': '#FBBF24',
-                                                    'Quest': '#D946EF', 'Synthetic': '#38BDF8', 'Exfil': '#2DD4BF',
+                                                    'Quest': '#D946EF', 'Synthetic': '#22C55E', 'Exfil': '#2DD4BF',
                                                 }
                                                 return Object.entries(latestByBot)
                                                     .filter(([profileId, o]) => o.status === 'Moving' && !deadOrGone.has(profileId))
