@@ -17,7 +17,7 @@ import { PlayerSlider } from './MapPlayerSlider.js';
 
 import BotMapping from '../assets/botMapping.json'
 import { getMarkerLabel, getPlayerColor, getLegendIcon, PMC_COLORS, buildPmcIndexMap, getFactionRole } from '../helpers/players'
-import { getBehaviorCategory, BEHAVIOR_CATEGORIES, formatDecisionLabel } from '../helpers/botBehavior'
+import { getBehaviorCategory, BEHAVIOR_CATEGORIES, formatDecisionLabel, getDecisionSource } from '../helpers/botBehavior'
 
 import 'leaflet/dist/leaflet.css';
 
@@ -504,6 +504,10 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     // playback frames instead of being torn down + rebuilt every tick. Fixes the
     // tooltip flicker + name jitter reported in issue #24.
     const playerMarkersRef = useRef<Map<string, L.Marker>>(new Map())
+    // Objective dashed-lines keyed by playerId, so the per-frame render loop can keep each line's bot-end glued
+    // to the live marker position. The objective LAYER only rebuilds on coarse deps, so without this the line
+    // freezes at a stale spot while the dot moves on (lags fast-moving bots).
+    const objectiveLineRef = useRef<Map<string, L.Polyline>>(new Map())
     // The focus-overlay tooltip currently applied {id, html}, so we only re-issue
     // setTooltipContent/openTooltip when it actually changes (no per-frame churn).
     const focusTooltipRef = useRef<{ id: string, html: string } | null>(null)
@@ -955,7 +959,13 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                     if (showBehavior && !isBTR) {
                         behaviorCat = getBehaviorCategory(currentDecision)
                         const decisionLabel = currentDecision ? formatDecisionLabel(currentDecision) : ''
-                        behaviorLine = `<br/><span style="color:${behaviorCat.color}">${behaviorCat.label}</span>${decisionLabel ? ': ' + decisionLabel : ''}`
+                        // Head = the SOURCE mod (SAIN / ORBIT / Vanilla / ...) in plain white; the DECISION carries
+                        // the category colour (the legend maps colour -> category). The green "Orbiting" pun for
+                        // ORBIT patrol keeps the colour on the single word (no decision suffix).
+                        const behaviorHead = behaviorCat.key === 'orbit' ? behaviorCat.label : (getDecisionSource(currentDecision) || behaviorCat.label)
+                        behaviorLine = behaviorCat.key === 'orbit'
+                            ? `<br/><span style="color:${behaviorCat.color}">${behaviorHead}</span>`
+                            : `<br/>${behaviorHead}${decisionLabel ? ': <span style="color:' + behaviorCat.color + '">' + decisionLabel + '</span>' : ''}`
                     }
                     if (currentHealth != null && maxHealth != null && maxHealth > 0) {
                         const pct = Math.round((currentHealth / maxHealth) * 100)
@@ -1038,6 +1048,13 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                         marker._rr_normalOpacity = 1
                     }
                     renderedPlayerIds.add(playerId)
+                    // Keep the dashed objective line's bot-end on the live marker position (the objective layer
+                    // only rebuilds on coarse deps, so the line would otherwise lag a fast-moving bot).
+                    const objLine = objectiveLineRef.current.get(playerId)
+                    if (objLine) {
+                        const ll = objLine.getLatLngs() as L.LatLng[]
+                        if (ll.length >= 2) objLine.setLatLngs([endOfLine, ll[1]] as L.LatLngExpression[])
+                    }
                     if (followPlayer === playerId) {
                         if (!followPlayerZoomed) {
                             MAP.setZoom(3)
@@ -1976,6 +1993,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         if (!showBotObjectives || botObjectiveData.length === 0) return
 
         const group = L.layerGroup()
+        objectiveLineRef.current.clear()
 
         // Latest objective per bot at current timeline position
         const latestByBot: Record<string, any> = {}
@@ -2050,6 +2068,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                         )
                         line._rr_objective = true
                         group.addLayer(line)
+                        objectiveLineRef.current.set(profileId, line)
                     }
                 }
             }

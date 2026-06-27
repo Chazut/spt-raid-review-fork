@@ -4,7 +4,7 @@ import api from "../../api/api";
 import { TrackingPositionalData, TrackingRaidData } from "../../types/api_types";
 import { intl, msToHMS } from "../../helpers";
 import { getPlayerColor, getLegendIcon, buildPmcIndexMap } from "../../helpers/players";
-import { getBehaviorCategory, BEHAVIOR_CATEGORIES, formatDecisionLabel } from "../../helpers/botBehavior";
+import { getBehaviorCategory, BEHAVIOR_CATEGORIES, formatDecisionLabel, getDecisionSource } from "../../helpers/botBehavior";
 import cyr_to_en from '../../assets/cyr_to_en.json';
 
 export async function loader(loaderData: LoaderFunctionArgs) {
@@ -509,10 +509,10 @@ export default function RaidBehaviorTimeline() {
                     pointerEvents: 'none',
                     maxWidth: 320,
                 }}>
-                    <div style={{ color: (hoveredSegment.seg.category === 'idle' || hoveredSegment.seg.category === 'patrol') ? '#9a8866' : hoveredSegment.seg.categoryColor, fontWeight: 'bold' }}>
-                        {hoveredSegment.seg.label}
+                    <div style={{ color: hoveredSegment.seg.category === 'orbit' ? hoveredSegment.seg.categoryColor : '#fff', fontWeight: 'bold' }}>
+                        {hoveredSegment.seg.category === 'orbit' ? hoveredSegment.seg.label : (getDecisionSource(hoveredSegment.seg.decision) || hoveredSegment.seg.label)}
                     </div>
-                    <div style={{ color: '#ccc' }}>
+                    <div style={{ color: (hoveredSegment.seg.category === 'idle' || hoveredSegment.seg.category === 'patrol') ? '#9a8866' : hoveredSegment.seg.categoryColor }}>
                         {hoveredSegment.seg.decision ? formatDecisionLabel(hoveredSegment.seg.decision) : 'No active decision'}
                     </div>
                     <div style={{ color: '#999', fontSize: '12px' }}>

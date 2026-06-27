@@ -148,3 +148,39 @@ export function formatDecisionLabel(decision: string | undefined | null): string
     // Convert camelCase to readable: "shootFromPlace" -> "Shoot From Place"
     return clean.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim()
 }
+
+// SAIN decision/layer enum names (PascalCase) that arrive WITHOUT a "SAIN:" prefix — used to attribute the
+// source mod. Kept in sync with the SAIN sections of DECISION_TO_CATEGORY above.
+const SAIN_DECISIONS = new Set<string>([
+    // ECombatDecision
+    'MoveToEngage', 'StandAndShoot', 'ShootDistantEnemy', 'DogFight', 'RushEnemy', 'MeleeAttack',
+    'FightZombies', 'Freeze', 'Search', 'SeekCover', 'ShiftCover', 'Retreat', 'ThrowGrenade',
+    // ESquadDecision
+    'PushSuppressedEnemy', 'GroupSearch', 'Suppress', 'Help', 'Regroup',
+    // ESelfActionType
+    'Reload', 'FirstAid', 'Surgery', 'Stims',
+    // ESAINLayer (broad)
+    'Combat', 'Squad', 'Extract', 'Run', 'Peace', 'AvoidThreat',
+    // BigBrain numeric SAIN layer ids
+    '9000', '9001', '9002', '9003', '9004',
+])
+
+// Which MOD is driving this decision. The behaviour colour already conveys the CATEGORY (via the legend), so
+// the tooltip head shows the source instead: "SAIN: Seek Cover", "ORBIT: Looking for loot", "Vanilla: Patrol
+// Follower". Returns '' when there's nothing to attribute (idle / no decision).
+export function getDecisionSource(decision: string | undefined | null): string {
+    if (!decision) return ''
+    if (decision.startsWith('Orbit:')) return 'ORBIT'
+    if (decision.startsWith('Phobos:')) return 'Phobos'
+    if (decision.startsWith('SAIN:')) return 'SAIN'
+    if (decision.startsWith('QB:')) return 'QuestingBots'
+    if (decision.startsWith('LootingBots:')) return 'LB'
+    if (decision.startsWith('BL:')) {
+        const n = decision.substring(3)
+        if (n.includes('SAIN')) return 'SAIN'
+        if (n.includes('Orbit')) return 'ORBIT'
+        return 'Vanilla'
+    }
+    if (SAIN_DECISIONS.has(decision)) return 'SAIN'
+    return 'Vanilla'
+}
