@@ -11,6 +11,7 @@ export const BEHAVIOR_CATEGORIES: Record<string, BehaviorCategory> = {
     cover:    { key: 'cover',    label: 'Cover',    color: '#0EA5E9' },
     patrol:   { key: 'patrol',   label: 'Patrol',   color: '#22C55E' },
     orbit:    { key: 'orbit',    label: 'Orbiting', color: '#22C55E' },
+    guard:    { key: 'guard',    label: 'Guarding', color: '#15803D' },
     medical:  { key: 'medical',  label: 'Medical',  color: '#EC4899' },
     loot:     { key: 'loot',     label: 'Loot',     color: '#FACC15' },
     flee:     { key: 'flee',     label: 'Flee',     color: '#A855F7' },
@@ -109,6 +110,7 @@ export function getBehaviorCategory(decision: string | undefined | null): Behavi
         if (cat === 'Quest') return BEHAVIOR_CATEGORIES.quest
         if (cat === 'Exfil') return BEHAVIOR_CATEGORIES.extract
         if (cat === 'Synthetic') return BEHAVIOR_CATEGORIES.orbit
+        if (cat === 'Guarding') return BEHAVIOR_CATEGORIES.guard
         return BEHAVIOR_CATEGORIES.movement
     }
     const cleanDecision = decision.startsWith('SAIN:') ? decision.substring(5) : decision

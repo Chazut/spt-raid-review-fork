@@ -1006,11 +1006,17 @@ namespace RAID_REVIEW
                                     try
                                     {
                                         var od = Orbit_Integration.GetBotObjectiveData(player, sessionId, captureTime);
-                                        if (od != null && od.status == "Moving")
+                                        if (od != null && IsIdleOrPatrolDecision(decision))
                                         {
-                                            var isIdleOrPatrol = IsIdleOrPatrolDecision(decision);
-                                            if (isIdleOrPatrol)
+                                            // ORBIT is in control. Moving → show the objective category
+                                            // ("Looking for loot" etc.). Finished → the bot reached its
+                                            // objective and is guarding it, so surface that instead of the
+                                            // vanilla "Simple Patrol" idle decision underneath. Looting / other
+                                            // states are left alone (the move-to-loot phase already labels loot).
+                                            if (od.status == "Moving")
                                                 decision = "Orbit:" + od.category;
+                                            else if (od.status == "Finished")
+                                                decision = "Orbit:Guarding";
                                         }
                                     }
                                     catch { }
