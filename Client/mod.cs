@@ -493,19 +493,24 @@ namespace RAID_REVIEW
         // KillsRoamStartedAt mutate over the raid — periodic ticks let the
         // viz reflect progression.
         private static long _orbitMainObjLastCapture = -999999;
+        private static int _orbitMainObjLastRevision = -1;
         private const long OrbitMainObjIntervalMs = 30000;
-        public static void ResetOrbitMainObjFlag() { _orbitMainObjLastCapture = -999999; }
+        public static void ResetOrbitMainObjFlag() { _orbitMainObjLastCapture = -999999; _orbitMainObjLastRevision = -1; }
 
         private void CaptureOrbitMainObjectives()
         {
             if (!ORBIT__DETECTED) return;
             var now = stopwatch.ElapsedMilliseconds;
-            if (now - _orbitMainObjLastCapture < OrbitMainObjIntervalMs) return;
+            // Capture on the periodic poll OR immediately when a main just flipped Completed (ORBIT bumps its
+            // revision), so a finished main / extract isn't shown as "in progress" until the next 30s poll.
+            var revision = Orbit_Integration.GetMainObjectivesRevision();
+            if (now - _orbitMainObjLastCapture < OrbitMainObjIntervalMs && revision == _orbitMainObjLastRevision) return;
             try
             {
                 var snapshot = Orbit_Integration.GetMainObjectivesSnapshot(sessionId, now);
                 if (snapshot == null) return;
                 _orbitMainObjLastCapture = now;
+                _orbitMainObjLastRevision = revision;
                 _ = Telemetry.Send("ORBIT_MAIN_OBJECTIVES", JsonConvert.SerializeObject(snapshot));
             }
             catch (Exception ex)

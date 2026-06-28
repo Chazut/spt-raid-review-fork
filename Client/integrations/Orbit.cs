@@ -135,5 +135,9 @@ namespace RAID_REVIEW
                 squads = squads,
             };
         }
+
+        // Cheap revision counter — bumped by ORBIT whenever a squad main flips Completed. Lets the capture loop
+        // re-snapshot the instant a main finishes instead of waiting for the next periodic poll.
+        public static int GetMainObjectivesRevision() => OrbitTelemetry.MainObjectivesRevision;
     }
 }
