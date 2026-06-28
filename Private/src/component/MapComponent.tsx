@@ -15,8 +15,7 @@ import { useMapImages } from '../modules/maps-index.js';
 import { TrackingPositionalData, TrackingLooseLootItem, TrackingPlayerInventoryItem } from '../types/api_types.js';
 import { PlayerSlider } from './MapPlayerSlider.js';
 
-import BotMapping from '../assets/botMapping.json'
-import { getMarkerLabel, getPlayerColor, getLegendIcon, PMC_COLORS, buildPmcIndexMap, getFactionRole } from '../helpers/players'
+import { getMarkerLabel, getPlayerColor, getLegendIcon, PMC_COLORS, buildPmcIndexMap, getFactionRole, resolveBotType } from '../helpers/players'
 import { getBehaviorCategory, BEHAVIOR_CATEGORIES, formatDecisionLabel, getDecisionSource } from '../helpers/botBehavior'
 
 import 'leaflet/dist/leaflet.css';
@@ -35,23 +34,7 @@ function classifyPlayer(player: any): string {
     const isHuman = player.type === 'HUMAN'
     if (isPMC || isHuman) return 'PMC'
 
-    let botMapping = BotMapping[player.type]
-    if (player.name === 'Knight') botMapping = { type: 'GOON' }
-    // Handle bots not in botMapping.json by inferring from the type string "NAME|CATEGORY"
-    if (!botMapping && typeof player.type === 'string' && player.type.includes('|')) {
-        const category = player.type.split('|')[1]
-        const name = player.type.split('|')[0].toLowerCase()
-        if (category === 'FACTION_MOD') {
-            botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' }
-        } else {
-            // Use the category directly (RUAF, UNTAR, SNIPER, etc.) — covers custom
-            // faction-mod bots like Remnant that aren't explicitly mapped
-            botMapping = { type: category }
-        }
-    }
-    if (!botMapping) botMapping = { type: 'UNKNOWN' }
-
-    switch (botMapping.type) {
+    switch (resolveBotType(player)) {
         case 'PLAYER_SCAV': return 'PLAYER_SCAV'
         case 'BOSS': return 'BOSS'
         case 'GOON': return 'GOON'
@@ -67,6 +50,7 @@ function classifyPlayer(player: any): string {
         case 'RUAF':
         case 'UNTAR':
         case 'BLACKDIV':
+        case 'COMBINE':
         case 'ISB': return 'FACTION'
         case 'SCAV':
         default:
@@ -2755,22 +2739,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     function getPlayerBrain(player: TrackingRaidDataPlayers): string {
         if (player) {
             let brainOutput = 'Unknown'
-            let botMapping = BotMapping[player.type]
-            if (player.name === 'Knight') {
-                botMapping = { type: 'GOON' }
-            }
-            if (!botMapping && typeof player.type === 'string' && player.type.includes('|')) {
-                const category = player.type.split('|')[1]
-                const name = player.type.split('|')[0].toLowerCase()
-                if (category === 'FACTION_MOD') {
-                    botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' }
-                } else {
-                    botMapping = { type: category }
-                }
-            }
-            if (!botMapping) {
-                botMapping = { type: 'UNKNOWN' }
-            }
+            const botMapping = { type: resolveBotType(player) }
 
             if ((player.team === 'Bear' || player.team === 'Usec') && player.mod_SAIN_brain != 'UNKNOWN') {
                 return `${player.mod_SAIN_brain.trim()}`
@@ -2787,6 +2756,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
 
             if (botMapping.type === 'GOON') brainOutput = `Goon`
             if (botMapping.type === 'FOLLOWER') brainOutput = `Follower`
+            if (botMapping.type === 'COMBINE') brainOutput = `Combine`
             if (botMapping.type === 'RAIDER') brainOutput = `Raider`
             if (botMapping.type === 'ROGUE') brainOutput = `Rogue`
             if (botMapping.type === 'CULT') brainOutput = `Cultist`
@@ -2957,15 +2927,10 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
 
                                 // Faction sub-grouping by faction type
                                 if (group.key === 'FACTION') {
-                                    const FACTION_LABELS: Record<string, string> = { MERCENARY: 'Mercenary', RUAF: 'RUAF', UNTAR: 'UNTAR', BLACKDIV: 'Black Div', ISB: 'ISB' }
+                                    const FACTION_LABELS: Record<string, string> = { MERCENARY: 'Mercenary', RUAF: 'RUAF', UNTAR: 'UNTAR', BLACKDIV: 'Black Div', ISB: 'ISB', COMBINE: 'Combine' }
                                     const factions: Record<string, { player: any, originalIndex: number }[]> = {}
                                     items.forEach(item => {
-                                        let fType = BotMapping[item.player.type]?.type
-                                        // Fallback for bots not in botMapping.json — use the category after "|"
-                                        if (!fType && typeof item.player.type === 'string' && item.player.type.includes('|')) {
-                                            fType = item.player.type.split('|')[1]
-                                        }
-                                        fType = fType || 'UNKNOWN'
+                                        const fType = resolveBotType(item.player)
                                         if (!factions[fType]) factions[fType] = []
                                         factions[fType].push(item)
                                     })
