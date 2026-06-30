@@ -167,7 +167,7 @@ namespace RAID_REVIEW
                 case "ISBFireflyFollowerVipper": return "ISB FIREFLY VIPPER|ISB";
                 case "ISBFireflyShielder01": return "ISB FIREFLY SHIELDER 1|ISB";
                 case "ISBFireflyShielder02": return "ISB FIREFLY SHIELDER 2|ISB";
-                // Manimal's Combine Soldiers (com.manimal.combinesoldiers)
+                // Manimal's Combine Soldiers
                 case "CombineSoldier": return "COMBINE SOLDIER|COMBINE";
                 case "CombineShotgunner": return "COMBINE SHOTGUNNER|COMBINE";
                 case "CombineElite": return "COMBINE ELITE|COMBINE";
@@ -392,7 +392,7 @@ namespace RAID_REVIEW
                 {
                     var standBy = _sainStandByProp.GetValue(botComp);
                     if (standBy is true)
-                        return "standBy"; // vanilla state — SAIN has no decision, don't claim it as SAIN
+                        return "standBy";
                 }
 
                 // Check Mover.Moving to distinguish patrol from idle
@@ -403,21 +403,16 @@ namespace RAID_REVIEW
                     {
                         var moving = _sainMoverMovingProp.GetValue(mover);
                         if (moving is true)
-                            return "simplePatrol"; // vanilla state — SAIN has no decision, don't claim it as SAIN
+                            return "simplePatrol";
                     }
                 }
             }
             catch { }
 
-            // Truly idle — no SAIN decision, not moving. This is a vanilla state, so report it WITHOUT the
-            // "SAIN:" prefix (the bot is SAIN-managed but SAIN isn't driving anything here).
+            // Vanilla states (peaceful/simplePatrol/standBy) are reported without the "SAIN:" prefix.
             return "peaceful";
         }
 
-        // True for "bot is managed but not doing anything SAIN-specific" decisions — the point at which a richer
-        // source (BigBrain loot/follower layer, QuestingBots, ORBIT/Phobos objective) should override the label.
-        // The idle/patrol fallbacks are reported WITHOUT a "SAIN:" prefix because they are NOT real SAIN
-        // decisions (SAIN had none) — the actual idle/patrol behaviour is driven by vanilla BigBrain.
         private static bool IsIdleOrPatrolDecision(string decision)
             => string.IsNullOrEmpty(decision)
                || decision == "peaceful" || decision == "simplePatrol" || decision == "standBy"
@@ -501,8 +496,7 @@ namespace RAID_REVIEW
         {
             if (!ORBIT__DETECTED) return;
             var now = stopwatch.ElapsedMilliseconds;
-            // Capture on the periodic poll OR immediately when a main just flipped Completed (ORBIT bumps its
-            // revision), so a finished main / extract isn't shown as "in progress" until the next 30s poll.
+            // Re-snapshot on the periodic poll or immediately when the revision bumps (a main flipped Completed).
             var revision = Orbit_Integration.GetMainObjectivesRevision();
             if (now - _orbitMainObjLastCapture < OrbitMainObjIntervalMs && revision == _orbitMainObjLastRevision) return;
             try
@@ -1008,12 +1002,8 @@ namespace RAID_REVIEW
                                         var od = Orbit_Integration.GetBotObjectiveData(player, sessionId, captureTime);
                                         if (od != null && IsIdleOrPatrolDecision(decision))
                                         {
-                                            // ORBIT is in control. Moving → show the objective category
-                                            // ("Looking for loot" etc.). Finished → the bot reached its
-                                            // objective and is guarding it, so surface that instead of the
-                                            // vanilla "Simple Patrol" idle decision underneath. Looting / other
-                                            // states are left alone (the move-to-loot phase already labels loot).
-                                            if (od.status == "Moving")
+                                            // Finished means the bot reached the objective and is guarding it.
+                                            if (od.status == "Moving" || od.status == "Looting")
                                                 decision = "Orbit:" + od.category;
                                             else if (od.status == "Finished")
                                                 decision = "Orbit:Guarding";
