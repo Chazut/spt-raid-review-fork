@@ -291,6 +291,18 @@
         "name": "ISB Firefly Shielder 2",
         "type": "ISB"
     },
+    "COMBINE SOLDIER|COMBINE": {
+        "name": "Combine Soldier",
+        "type": "COMBINE"
+    },
+    "COMBINE SHOTGUNNER|COMBINE": {
+        "name": "Combine Shotgunner",
+        "type": "COMBINE"
+    },
+    "COMBINE ELITE|COMBINE": {
+        "name": "Combine Elite",
+        "type": "COMBINE"
+    },
     "UNKNOWN": {
         "name": "",
         "type": ""

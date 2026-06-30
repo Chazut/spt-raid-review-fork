@@ -85,10 +85,22 @@ for file in "$output_path"/RAID_REVIEW.dll; do
     fi
 done
 
-# 6. Create ZIP
+# 6. Create ZIP — use 7-Zip, NOT PowerShell Compress-Archive. Compress-Archive writes Windows backslash path
+# separators (\) into the archive, which are out of the ZIP spec: Windows / 7-Zip tolerate them, but Linux
+# `unzip` treats them as literal filenames, so the mod extracts broken on Linux. 7-Zip writes spec-compliant
+# forward slashes.
 echo ">> Creating distribution archive..."
+sevenzip="$(command -v 7z || command -v 7za || true)"
+for cand in "/c/Program Files/7-Zip/7z.exe" "/c/Program Files (x86)/7-Zip/7z.exe"; do
+    [ -z "$sevenzip" ] && [ -x "$cand" ] && sevenzip="$cand"
+done
+if [ -z "$sevenzip" ]; then
+    echo "ERROR: 7-Zip not found. Install it or add 7z to PATH (do NOT fall back to Compress-Archive)."
+    exit 1
+fi
 cd "$dist_folder"
-powershell -Command "Compress-Archive -Force -Path '*' -DestinationPath '../${name}__${version}.zip'" > /dev/null
+rm -f "../${name}__${version}.zip"
+"$sevenzip" a -tzip "../${name}__${version}.zip" "*" > /dev/null
 cd "$current_dir"
 
 # Cleanup

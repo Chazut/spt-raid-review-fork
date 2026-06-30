@@ -1979,6 +1979,10 @@
                     {
                         "name": "Bunkers",
                         "svgPath": "https://assets.tarkov.dev/maps/svg/Reserve-Bunkers.svg",
+                        "svgBounds": [
+                            [289, -274],
+                            [-303, 272]
+                        ],
                         "show": false,
                         "extents": [
                             {

@@ -61,27 +61,28 @@ export function getMarkerLabel(player: any): string | null {
     return null
 }
 
-export function getPlayerColor(player: any, index: number): string {
-    if (player === undefined) return '#999'
-
+// Single source of truth for a bot's type key: botMapping.json first, then the "NAME|CATEGORY" WildSpawnType
+// string for faction-mod bots. All colour/label/role/grouping helpers build on this.
+export function resolveBotType(player: any): string {
+    if (!player) return 'UNKNOWN'
     let botMapping = (BotMapping as any)[player.type]
-    if (player.name === 'Knight') {
-        botMapping = { type: 'GOON' }
-    }
+    if (player.name === 'Knight') botMapping = { type: 'GOON' }
     if (!botMapping && typeof player.type === 'string' && player.type.includes('|')) {
         const category = player.type.split('|')[1]
         const name = player.type.split('|')[0].toLowerCase()
         if (category === 'FACTION_MOD') {
-            botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' }
+            botMapping = { type: name.startsWith('boss') ? 'BOSS' : name.startsWith('combine') ? 'COMBINE' : 'FOLLOWER' }
         } else {
             botMapping = { type: category }
         }
     }
-    if (!botMapping) {
-        botMapping = { type: 'UNKNOWN' }
-    }
+    return botMapping?.type ?? 'UNKNOWN'
+}
 
-    switch (botMapping.type) {
+export function getPlayerColor(player: any, index: number): string {
+    if (player === undefined) return '#999'
+
+    switch (resolveBotType(player)) {
         case 'SCAV': return '#33FF57'
         case 'BOSS': return '#FF0000'
         case 'ROGUE':
@@ -98,6 +99,7 @@ export function getPlayerColor(player: any, index: number): string {
         case 'UNTAR': return '#00BFFF'
         case 'BLACKDIV': return '#555555'
         case 'ISB': return '#1ABC9C'
+        case 'COMBINE': return '#4B6584'
         case 'INFECTED': return '#7FFF00'
         default:
             if (player.type === 'PLAYER' && player.team === 'Savage') return '#33FF57'
@@ -134,7 +136,8 @@ export function getFactionRole(player: any): string {
         if (typeName === p) { role = typeName; break }
         if (typeName.startsWith(p + ' ')) { role = typeName.slice(p.length + 1); break }
     }
-    // Title case
+    // Combine-mod roles have no space separator (e.g. COMBINESOLDIER), so strip the prefix to read "Soldier".
+    if (role.startsWith('COMBINE') && role.length > 'COMBINE'.length) role = role.slice('COMBINE'.length)
     return role.toLowerCase().split(' ').filter(Boolean)
         .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
 }
@@ -146,20 +149,7 @@ export function getPlayerFaction(player: any): string {
     if (player.type === 'PLAYER' && player.team === 'Savage') return 'Player Scav'
     if (player.type === 'HUMAN') return 'PMC'
 
-    let botMapping = (BotMapping as any)[player.type]
-    if (player.name === 'Knight') botMapping = { type: 'GOON' }
-    if (!botMapping && typeof player.type === 'string' && player.type.includes('|')) {
-        const category = player.type.split('|')[1]
-        const name = player.type.split('|')[0].toLowerCase()
-        if (category === 'FACTION_MOD') {
-            botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' }
-        } else {
-            botMapping = { type: category }
-        }
-    }
-    if (!botMapping) return 'Unknown'
-
-    switch (botMapping.type) {
+    switch (resolveBotType(player)) {
         case 'SCAV': return 'Scav'
         case 'BOSS': return 'Boss'
         case 'ROGUE': return 'Rogue'
@@ -176,6 +166,7 @@ export function getPlayerFaction(player: any): string {
         case 'UNTAR': return 'UNTAR'
         case 'BLACKDIV': return 'Black Div'
         case 'ISB': return 'ISB'
+        case 'COMBINE': return 'Combine'
         case 'INFECTED': return 'Infected'
         default: return 'Unknown'
     }

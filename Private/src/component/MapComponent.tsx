@@ -15,9 +15,8 @@ import { useMapImages } from '../modules/maps-index.js';
 import { TrackingPositionalData, TrackingLooseLootItem, TrackingPlayerInventoryItem } from '../types/api_types.js';
 import { PlayerSlider } from './MapPlayerSlider.js';
 
-import BotMapping from '../assets/botMapping.json'
-import { getMarkerLabel, getPlayerColor, getLegendIcon, PMC_COLORS, buildPmcIndexMap, getFactionRole } from '../helpers/players'
-import { getBehaviorCategory, BEHAVIOR_CATEGORIES, formatDecisionLabel } from '../helpers/botBehavior'
+import { getMarkerLabel, getPlayerColor, getLegendIcon, PMC_COLORS, buildPmcIndexMap, getFactionRole, resolveBotType } from '../helpers/players'
+import { getBehaviorCategory, BEHAVIOR_CATEGORIES, formatDecisionLabel, getDecisionSource } from '../helpers/botBehavior'
 
 import 'leaflet/dist/leaflet.css';
 
@@ -35,23 +34,7 @@ function classifyPlayer(player: any): string {
     const isHuman = player.type === 'HUMAN'
     if (isPMC || isHuman) return 'PMC'
 
-    let botMapping = BotMapping[player.type]
-    if (player.name === 'Knight') botMapping = { type: 'GOON' }
-    // Handle bots not in botMapping.json by inferring from the type string "NAME|CATEGORY"
-    if (!botMapping && typeof player.type === 'string' && player.type.includes('|')) {
-        const category = player.type.split('|')[1]
-        const name = player.type.split('|')[0].toLowerCase()
-        if (category === 'FACTION_MOD') {
-            botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' }
-        } else {
-            // Use the category directly (RUAF, UNTAR, SNIPER, etc.) — covers custom
-            // faction-mod bots like Remnant that aren't explicitly mapped
-            botMapping = { type: category }
-        }
-    }
-    if (!botMapping) botMapping = { type: 'UNKNOWN' }
-
-    switch (botMapping.type) {
+    switch (resolveBotType(player)) {
         case 'PLAYER_SCAV': return 'PLAYER_SCAV'
         case 'BOSS': return 'BOSS'
         case 'GOON': return 'GOON'
@@ -67,6 +50,7 @@ function classifyPlayer(player: any): string {
         case 'RUAF':
         case 'UNTAR':
         case 'BLACKDIV':
+        case 'COMBINE':
         case 'ISB': return 'FACTION'
         case 'SCAV':
         default:
@@ -504,6 +488,9 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     // playback frames instead of being torn down + rebuilt every tick. Fixes the
     // tooltip flicker + name jitter reported in issue #24.
     const playerMarkersRef = useRef<Map<string, L.Marker>>(new Map())
+    // Objective dashed-lines keyed by playerId, so the per-frame loop can keep each line's bot-end on the live
+    // marker (the objective layer only rebuilds on coarse deps, so otherwise the line lags a fast-moving bot).
+    const objectiveLineRef = useRef<Map<string, L.Polyline>>(new Map())
     // The focus-overlay tooltip currently applied {id, html}, so we only re-issue
     // setTooltipContent/openTooltip when it actually changes (no per-frame churn).
     const focusTooltipRef = useRef<{ id: string, html: string } | null>(null)
@@ -954,7 +941,13 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                     }
                     if (showBehavior && !isBTR) {
                         behaviorCat = getBehaviorCategory(currentDecision)
-                        behaviorLine = `<br/><span style="color:${behaviorCat.color}">${behaviorCat.label}</span>${currentDecision ? ': ' + formatDecisionLabel(currentDecision) : ''}`
+                        const decisionLabel = currentDecision ? formatDecisionLabel(currentDecision) : ''
+                        // Source mod as a white head, decision suffix in the category colour. ORBIT patrol is the
+                        // exception: just the coloured category word, no suffix.
+                        const behaviorHead = behaviorCat.key === 'orbit' ? behaviorCat.label : (getDecisionSource(currentDecision) || behaviorCat.label)
+                        behaviorLine = behaviorCat.key === 'orbit'
+                            ? `<br/><span style="color:${behaviorCat.color}">${behaviorHead}</span>`
+                            : `<br/>${behaviorHead}${decisionLabel ? ': <span style="color:' + behaviorCat.color + '">' + decisionLabel + '</span>' : ''}`
                     }
                     if (currentHealth != null && maxHealth != null && maxHealth > 0) {
                         const pct = Math.round((currentHealth / maxHealth) * 100)
@@ -1035,6 +1028,12 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                         marker._rr_normalOpacity = 1
                     }
                     renderedPlayerIds.add(playerId)
+                    // Keep the objective line's bot-end pinned to the live marker (see objectiveLineRef).
+                    const objLine = objectiveLineRef.current.get(playerId)
+                    if (objLine) {
+                        const ll = objLine.getLatLngs() as L.LatLng[]
+                        if (ll.length >= 2) objLine.setLatLngs([endOfLine, ll[1]] as L.LatLngExpression[])
+                    }
                     if (followPlayer === playerId) {
                         if (!followPlayerZoomed) {
                             MAP.setZoom(3)
@@ -1973,6 +1972,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
         if (!showBotObjectives || botObjectiveData.length === 0) return
 
         const group = L.layerGroup()
+        objectiveLineRef.current.clear()
 
         // Latest objective per bot at current timeline position
         const latestByBot: Record<string, any> = {}
@@ -1990,7 +1990,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             'ContainerLoot': { icon: '\u{1F4E6}', color: '#FACC15' }, // package, yellow
             'LooseLoot':     { icon: '\u{1F48E}', color: '#FBBF24' }, // gem, amber
             'Quest':         { icon: '\u{1F4CB}', color: '#D946EF' }, // clipboard, fuchsia
-            'Synthetic':     { icon: '\u{1F500}', color: '#38BDF8' }, // shuffle, sky
+            'Synthetic':     { icon: '\u{1F500}', color: '#22C55E' }, // shuffle, green
             'Exfil':         { icon: '\u{1F6AA}', color: '#2DD4BF' }, // door, teal
         }
 
@@ -2047,6 +2047,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                         )
                         line._rr_objective = true
                         group.addLayer(line)
+                        objectiveLineRef.current.set(profileId, line)
                     }
                 }
             }
@@ -2733,22 +2734,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     function getPlayerBrain(player: TrackingRaidDataPlayers): string {
         if (player) {
             let brainOutput = 'Unknown'
-            let botMapping = BotMapping[player.type]
-            if (player.name === 'Knight') {
-                botMapping = { type: 'GOON' }
-            }
-            if (!botMapping && typeof player.type === 'string' && player.type.includes('|')) {
-                const category = player.type.split('|')[1]
-                const name = player.type.split('|')[0].toLowerCase()
-                if (category === 'FACTION_MOD') {
-                    botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' }
-                } else {
-                    botMapping = { type: category }
-                }
-            }
-            if (!botMapping) {
-                botMapping = { type: 'UNKNOWN' }
-            }
+            const botMapping = { type: resolveBotType(player) }
 
             if ((player.team === 'Bear' || player.team === 'Usec') && player.mod_SAIN_brain != 'UNKNOWN') {
                 return `${player.mod_SAIN_brain.trim()}`
@@ -2765,6 +2751,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
 
             if (botMapping.type === 'GOON') brainOutput = `Goon`
             if (botMapping.type === 'FOLLOWER') brainOutput = `Follower`
+            if (botMapping.type === 'COMBINE') brainOutput = `Combine`
             if (botMapping.type === 'RAIDER') brainOutput = `Raider`
             if (botMapping.type === 'ROGUE') brainOutput = `Rogue`
             if (botMapping.type === 'CULT') brainOutput = `Cultist`
@@ -2935,15 +2922,10 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
 
                                 // Faction sub-grouping by faction type
                                 if (group.key === 'FACTION') {
-                                    const FACTION_LABELS: Record<string, string> = { MERCENARY: 'Mercenary', RUAF: 'RUAF', UNTAR: 'UNTAR', BLACKDIV: 'Black Div', ISB: 'ISB' }
+                                    const FACTION_LABELS: Record<string, string> = { MERCENARY: 'Mercenary', RUAF: 'RUAF', UNTAR: 'UNTAR', BLACKDIV: 'Black Div', ISB: 'ISB', COMBINE: 'Combine' }
                                     const factions: Record<string, { player: any, originalIndex: number }[]> = {}
                                     items.forEach(item => {
-                                        let fType = BotMapping[item.player.type]?.type
-                                        // Fallback for bots not in botMapping.json — use the category after "|"
-                                        if (!fType && typeof item.player.type === 'string' && item.player.type.includes('|')) {
-                                            fType = item.player.type.split('|')[1]
-                                        }
-                                        fType = fType || 'UNKNOWN'
+                                        const fType = resolveBotType(item.player)
                                         if (!factions[fType]) factions[fType] = []
                                         factions[fType].push(item)
                                     })
@@ -3349,7 +3331,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                             <span style={{ color: '#FACC15' }}>{'●'} Container</span>
                                             <span style={{ color: '#FBBF24' }}>{'●'} Loose Loot</span>
                                             <span style={{ color: '#D946EF' }}>{'●'} Quest</span>
-                                            <span style={{ color: '#38BDF8' }}>{'●'} Synthetic</span>
+                                            <span style={{ color: '#22C55E' }}>{'●'} Synthetic</span>
                                             <span style={{ color: '#2DD4BF' }}>{'●'} Exfil</span>
                                         </div>
                                         <div style={{ maxHeight: '250px', overflowY: 'auto', borderTop: '1px solid rgba(154,136,102,0.2)', paddingTop: '4px' }}>
@@ -3368,7 +3350,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                 }
                                                 const catColor: Record<string, string> = {
                                                     'ContainerLoot': '#FACC15', 'LooseLoot': '#FBBF24',
-                                                    'Quest': '#D946EF', 'Synthetic': '#38BDF8', 'Exfil': '#2DD4BF',
+                                                    'Quest': '#D946EF', 'Synthetic': '#22C55E', 'Exfil': '#2DD4BF',
                                                 }
                                                 return Object.entries(latestByBot)
                                                     .filter(([profileId, o]) => o.status === 'Moving' && !deadOrGone.has(profileId))

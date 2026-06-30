@@ -135,5 +135,8 @@ namespace RAID_REVIEW
                 squads = squads,
             };
         }
+
+        // ORBIT bumps this whenever a squad main flips Completed.
+        public static int GetMainObjectivesRevision() => OrbitTelemetry.MainObjectivesRevision;
     }
 }

@@ -6,11 +6,10 @@ import { TrackingRaidData, TrackingRaidDataPlayers } from '../../types/api_types
 import './Raids.css'
 import { intl, msToHMS } from "../../helpers";
 
-import BotMapping from '../../assets/botMapping.json'
 import { useEffect, useState } from "react";
 import _ from "lodash";
 import { LOCATIONS } from "../../helpers/locations";
-import { getFactionRole } from "../../helpers/players";
+import { getFactionRole, resolveBotType } from "../../helpers/players";
 import cyr_to_en from '../../assets/cyr_to_en.json';
 
 const BOSS_NAME_OVERRIDES: Record<string, string> = {
@@ -30,6 +29,7 @@ const FACTION_COLORS: Record<string, { color: string, label: string }> = {
     'UNTAR':       { color: '#00BFFF', label: 'UNTAR' },
     'BLACK DIV':   { color: '#555555', label: 'Black Div' },
     'ISB':         { color: '#1ABC9C', label: 'ISB' },
+    'COMBINE':     { color: '#4B6584', label: 'Combine' },
     'SNIPER':      { color: '#00911a', label: 'Sniper' },
     'PLAYER SCAV': { color: '#33FF8D', label: 'P. Scav' },
     'INFECTED':    { color: '#7FFF00', label: 'Infected' },
@@ -210,7 +210,7 @@ export default function RaidOverview() {
         }
 
         if (groupedByType === 'TEAM') {
-          const SIDE_ORDER = ['Player', 'USEC', 'BEAR', 'P. Scav', 'Boss', 'Goon', 'Follower', 'Raider', 'Rogue', 'Cultist', 'Bloodhound', 'Special', 'Infected', 'Mercenary', 'RUAF', 'UNTAR', 'Black Div', 'ISB', 'Sniper', 'Scav'];
+          const SIDE_ORDER = ['Player', 'USEC', 'BEAR', 'P. Scav', 'Boss', 'Goon', 'Follower', 'Raider', 'Rogue', 'Cultist', 'Bloodhound', 'Special', 'Infected', 'Mercenary', 'RUAF', 'UNTAR', 'Black Div', 'ISB', 'Combine', 'Sniper', 'Scav'];
           const grouped = _.groupBy(raid.players, p => {
             if (p.profileId === raid.profileId) return 'Player';
             const isPMC = p.team === 'Usec' || p.team === 'Bear';
@@ -292,23 +292,7 @@ export default function RaidOverview() {
     function getPlayerBrain(player: TrackingRaidDataPlayers): string {
         if (player) {
 
-          // @ts-ignore
-          let botMapping = BotMapping[player.type];
-          if (player.name === "Knight") {
-            botMapping = { type: 'GOON' };
-          }
-          if (!botMapping && typeof player.type === 'string' && player.type.includes('|')) {
-            const category = player.type.split('|')[1];
-            const name = player.type.split('|')[0].toLowerCase();
-            if (category === 'FACTION_MOD') {
-              botMapping = { type: name.startsWith('boss') ? 'BOSS' : 'FOLLOWER' };
-            } else {
-              botMapping = { type: category };
-            }
-          }
-          if (!botMapping) {
-              botMapping = { type: 'UNKNOWN' };
-          }
+          const botMapping = { type: resolveBotType(player) };
 
           switch (botMapping.type){
               case 'BOSS':
@@ -339,6 +323,8 @@ export default function RaidOverview() {
                   return "BLACK DIV"
               case 'ISB':
                   return "ISB"
+              case 'COMBINE':
+                  return "COMBINE"
               case 'INFECTED':
                   return "INFECTED"
               case 'SPECIAL':
@@ -360,10 +346,10 @@ export default function RaidOverview() {
           let difficulty = player.mod_SAIN_difficulty;
           let brain = getPlayerBrain(player);
 
-          // Faction-mod bots (RUAF, UNTAR, BLACKDIV, MERCENARY): show their specific
-          // role (Rifleman, Grenadier, etc.).
+          // Combine sits under the generic FACTION_MOD category, so detect it by the "combine" prefix.
           const category = typeof player.type === "string" && player.type.includes("|") ? player.type.split("|")[1] : "";
-          if (["RUAF", "UNTAR", "BLACKDIV", "MERCENARY"].includes(category)) {
+          const roleName = typeof player.type === "string" && player.type.includes("|") ? player.type.split("|")[0].toLowerCase() : "";
+          if (["RUAF", "UNTAR", "BLACKDIV", "MERCENARY"].includes(category) || (category === "FACTION_MOD" && roleName.startsWith("combine"))) {
             const role = getFactionRole(player);
             if (role) return role;
           }

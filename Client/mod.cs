@@ -23,7 +23,7 @@ using EFT.Interactive;
 
 namespace RAID_REVIEW
 {
-    [BepInPlugin("ekky.raidreview", "Raid Review", "1.1.0")]
+    [BepInPlugin("ekky.raidreview", "Raid Review", "1.3.0")]
     [BepInDependency("me.sol.sain", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("com.danw.questingbots", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("com.janky.phobos", BepInDependency.DependencyFlags.SoftDependency)]
@@ -167,6 +167,10 @@ namespace RAID_REVIEW
                 case "ISBFireflyFollowerVipper": return "ISB FIREFLY VIPPER|ISB";
                 case "ISBFireflyShielder01": return "ISB FIREFLY SHIELDER 1|ISB";
                 case "ISBFireflyShielder02": return "ISB FIREFLY SHIELDER 2|ISB";
+                // Manimal's Combine Soldiers
+                case "CombineSoldier": return "COMBINE SOLDIER|COMBINE";
+                case "CombineShotgunner": return "COMBINE SHOTGUNNER|COMBINE";
+                case "CombineElite": return "COMBINE ELITE|COMBINE";
                 default: return role.ToString().ToUpper() + "|FACTION_MOD";
             }
         }
@@ -388,7 +392,7 @@ namespace RAID_REVIEW
                 {
                     var standBy = _sainStandByProp.GetValue(botComp);
                     if (standBy is true)
-                        return "SAIN:standBy";
+                        return "standBy";
                 }
 
                 // Check Mover.Moving to distinguish patrol from idle
@@ -399,15 +403,20 @@ namespace RAID_REVIEW
                     {
                         var moving = _sainMoverMovingProp.GetValue(mover);
                         if (moving is true)
-                            return "SAIN:simplePatrol";
+                            return "simplePatrol";
                     }
                 }
             }
             catch { }
 
-            // Truly idle — no SAIN decision, not moving
-            return "SAIN:peaceful";
+            // Vanilla states (peaceful/simplePatrol/standBy) are reported without the "SAIN:" prefix.
+            return "peaceful";
         }
+
+        private static bool IsIdleOrPatrolDecision(string decision)
+            => string.IsNullOrEmpty(decision)
+               || decision == "peaceful" || decision == "simplePatrol" || decision == "standBy"
+               || decision == "SAIN:Peace";
 
         private static string GetSainDecision(Player player)
         {
@@ -479,19 +488,23 @@ namespace RAID_REVIEW
         // KillsRoamStartedAt mutate over the raid — periodic ticks let the
         // viz reflect progression.
         private static long _orbitMainObjLastCapture = -999999;
+        private static int _orbitMainObjLastRevision = -1;
         private const long OrbitMainObjIntervalMs = 30000;
-        public static void ResetOrbitMainObjFlag() { _orbitMainObjLastCapture = -999999; }
+        public static void ResetOrbitMainObjFlag() { _orbitMainObjLastCapture = -999999; _orbitMainObjLastRevision = -1; }
 
         private void CaptureOrbitMainObjectives()
         {
             if (!ORBIT__DETECTED) return;
             var now = stopwatch.ElapsedMilliseconds;
-            if (now - _orbitMainObjLastCapture < OrbitMainObjIntervalMs) return;
+            // Re-snapshot on the periodic poll or immediately when the revision bumps (a main flipped Completed).
+            var revision = Orbit_Integration.GetMainObjectivesRevision();
+            if (now - _orbitMainObjLastCapture < OrbitMainObjIntervalMs && revision == _orbitMainObjLastRevision) return;
             try
             {
                 var snapshot = Orbit_Integration.GetMainObjectivesSnapshot(sessionId, now);
                 if (snapshot == null) return;
                 _orbitMainObjLastCapture = now;
+                _orbitMainObjLastRevision = revision;
                 _ = Telemetry.Send("ORBIT_MAIN_OBJECTIVES", JsonConvert.SerializeObject(snapshot));
             }
             catch (Exception ex)
@@ -940,7 +953,7 @@ namespace RAID_REVIEW
                                 }
 
                                 // Override idle/patrol decisions with BigBrain layer name (LootingBots, etc.)
-                                if (player.IsAI && (string.IsNullOrEmpty(decision) || decision == "SAIN:peaceful" || decision == "SAIN:simplePatrol" || decision == "SAIN:standBy"))
+                                if (player.IsAI && IsIdleOrPatrolDecision(decision))
                                 {
                                     try
                                     {
@@ -970,9 +983,7 @@ namespace RAID_REVIEW
                                         var qd = QuestingBots_Integration.GetBotQuestData(player, sessionId, captureTime);
                                         if (qd != null && (qd.status == "Active" || qd.status == "Pending"))
                                         {
-                                            var isIdleOrPatrol = string.IsNullOrEmpty(decision)
-                                                || decision == "SAIN:peaceful" || decision == "SAIN:simplePatrol"
-                                                || decision == "SAIN:standBy" || decision == "SAIN:Peace";
+                                            var isIdleOrPatrol = IsIdleOrPatrolDecision(decision);
                                             if (isIdleOrPatrol)
                                                 decision = "QB:" + qd.questName;
                                         }
@@ -989,13 +1000,13 @@ namespace RAID_REVIEW
                                     try
                                     {
                                         var od = Orbit_Integration.GetBotObjectiveData(player, sessionId, captureTime);
-                                        if (od != null && od.status == "Moving")
+                                        if (od != null && IsIdleOrPatrolDecision(decision))
                                         {
-                                            var isIdleOrPatrol = string.IsNullOrEmpty(decision)
-                                                || decision == "SAIN:peaceful" || decision == "SAIN:simplePatrol"
-                                                || decision == "SAIN:standBy" || decision == "SAIN:Peace";
-                                            if (isIdleOrPatrol)
+                                            // Finished means the bot reached the objective and is guarding it.
+                                            if (od.status == "Moving" || od.status == "Looting")
                                                 decision = "Orbit:" + od.category;
+                                            else if (od.status == "Finished")
+                                                decision = "Orbit:Guarding";
                                         }
                                     }
                                     catch { }
@@ -1007,9 +1018,7 @@ namespace RAID_REVIEW
                                         var od = Phobos_Integration.GetBotObjectiveData(player, sessionId, captureTime);
                                         if (od != null && od.status == "Moving")
                                         {
-                                            var isIdleOrPatrol = string.IsNullOrEmpty(decision)
-                                                || decision == "SAIN:peaceful" || decision == "SAIN:simplePatrol"
-                                                || decision == "SAIN:standBy" || decision == "SAIN:Peace";
+                                            var isIdleOrPatrol = IsIdleOrPatrolDecision(decision);
                                             if (isIdleOrPatrol)
                                                 decision = "Phobos:" + od.category;
                                         }

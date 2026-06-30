@@ -10,6 +10,8 @@ export const BEHAVIOR_CATEGORIES: Record<string, BehaviorCategory> = {
     movement: { key: 'movement', label: 'Movement', color: '#3B82F6' },
     cover:    { key: 'cover',    label: 'Cover',    color: '#0EA5E9' },
     patrol:   { key: 'patrol',   label: 'Patrol',   color: '#22C55E' },
+    orbit:    { key: 'orbit',    label: 'Orbiting', color: '#22C55E' },
+    guard:    { key: 'guard',    label: 'Guarding', color: '#15803D' },
     medical:  { key: 'medical',  label: 'Medical',  color: '#EC4899' },
     loot:     { key: 'loot',     label: 'Loot',     color: '#FACC15' },
     flee:     { key: 'flee',     label: 'Flee',     color: '#A855F7' },
@@ -107,6 +109,8 @@ export function getBehaviorCategory(decision: string | undefined | null): Behavi
         if (cat === 'ContainerLoot' || cat === 'LooseLoot' || cat === 'Corpse') return BEHAVIOR_CATEGORIES.loot
         if (cat === 'Quest') return BEHAVIOR_CATEGORIES.quest
         if (cat === 'Exfil') return BEHAVIOR_CATEGORIES.extract
+        if (cat === 'Synthetic') return BEHAVIOR_CATEGORIES.orbit
+        if (cat === 'Guarding') return BEHAVIOR_CATEGORIES.guard
         return BEHAVIOR_CATEGORIES.movement
     }
     const cleanDecision = decision.startsWith('SAIN:') ? decision.substring(5) : decision
@@ -136,8 +140,41 @@ export function formatDecisionLabel(decision: string | undefined | null): string
     if (decision.startsWith('LootingBots:')) return decision.substring(12)
     if (decision.startsWith('BL:')) return decision.substring(3).replace(/^Bot/, '').replace(/Layer$/, '')
     if (decision.startsWith('Phobos:')) return formatObjectiveCategory(decision.substring(7))
-    if (decision.startsWith('Orbit:'))  return formatObjectiveCategory(decision.substring(6))
+    if (decision.startsWith('Orbit:')) {
+        // 'Synthetic' is patrolling: rendered as the bare category label, no decision suffix.
+        const cat = decision.substring(6)
+        return cat === 'Synthetic' ? '' : formatObjectiveCategory(cat)
+    }
     const clean = decision.startsWith('SAIN:') ? decision.substring(5) : decision
     // Convert camelCase to readable: "shootFromPlace" -> "Shoot From Place"
     return clean.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim()
+}
+
+// SAIN decision/layer enum names that arrive without a "SAIN:" prefix. Keep in sync with the SAIN sections
+// of DECISION_TO_CATEGORY above.
+const SAIN_DECISIONS = new Set<string>([
+    'MoveToEngage', 'StandAndShoot', 'ShootDistantEnemy', 'DogFight', 'RushEnemy', 'MeleeAttack',
+    'FightZombies', 'Freeze', 'Search', 'SeekCover', 'ShiftCover', 'Retreat', 'ThrowGrenade',
+    'PushSuppressedEnemy', 'GroupSearch', 'Suppress', 'Help', 'Regroup',
+    'Reload', 'FirstAid', 'Surgery', 'Stims',
+    'Combat', 'Squad', 'Extract', 'Run', 'Peace', 'AvoidThreat',
+    '9000', '9001', '9002', '9003', '9004', // BigBrain numeric SAIN layer ids
+])
+
+// The mod driving this decision, shown as the tooltip head since the colour already conveys the category.
+export function getDecisionSource(decision: string | undefined | null): string {
+    if (!decision) return ''
+    if (decision.startsWith('Orbit:')) return 'ORBIT'
+    if (decision.startsWith('Phobos:')) return 'Phobos'
+    if (decision.startsWith('SAIN:')) return 'SAIN'
+    if (decision.startsWith('QB:')) return 'QuestingBots'
+    if (decision.startsWith('LootingBots:')) return 'LB'
+    if (decision.startsWith('BL:')) {
+        const n = decision.substring(3)
+        if (n.includes('SAIN')) return 'SAIN'
+        if (n.includes('Orbit')) return 'ORBIT'
+        return 'Vanilla'
+    }
+    if (SAIN_DECISIONS.has(decision)) return 'SAIN'
+    return 'Vanilla'
 }
