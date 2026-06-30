@@ -448,7 +448,7 @@ namespace RAID_REVIEW
                             RR_WildSpawnType = "ISB FIREFLY SHIELDER 2|ISB";
                             break;
 
-                        // Manimal's Combine Soldiers (mirror of MapWildSpawnType in mod.cs)
+                        // Manimal's Combine Soldiers (keep in sync with MapWildSpawnType in mod.cs)
                         case "CombineSoldier":
                             RR_WildSpawnType = "COMBINE SOLDIER|COMBINE";
                             break;

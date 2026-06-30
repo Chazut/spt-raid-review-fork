@@ -488,9 +488,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     // playback frames instead of being torn down + rebuilt every tick. Fixes the
     // tooltip flicker + name jitter reported in issue #24.
     const playerMarkersRef = useRef<Map<string, L.Marker>>(new Map())
-    // Objective dashed-lines keyed by playerId, so the per-frame render loop can keep each line's bot-end glued
-    // to the live marker position. The objective LAYER only rebuilds on coarse deps, so without this the line
-    // freezes at a stale spot while the dot moves on (lags fast-moving bots).
+    // Objective dashed-lines keyed by playerId, so the per-frame loop can keep each line's bot-end on the live
+    // marker (the objective layer only rebuilds on coarse deps, so otherwise the line lags a fast-moving bot).
     const objectiveLineRef = useRef<Map<string, L.Polyline>>(new Map())
     // The focus-overlay tooltip currently applied {id, html}, so we only re-issue
     // setTooltipContent/openTooltip when it actually changes (no per-frame churn).
@@ -943,9 +942,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                     if (showBehavior && !isBTR) {
                         behaviorCat = getBehaviorCategory(currentDecision)
                         const decisionLabel = currentDecision ? formatDecisionLabel(currentDecision) : ''
-                        // Head = the SOURCE mod (SAIN / ORBIT / Vanilla / ...) in plain white; the DECISION carries
-                        // the category colour (the legend maps colour -> category). The green "Orbiting" pun for
-                        // ORBIT patrol keeps the colour on the single word (no decision suffix).
+                        // Source mod as a white head, decision suffix in the category colour. ORBIT patrol is the
+                        // exception: just the coloured category word, no suffix.
                         const behaviorHead = behaviorCat.key === 'orbit' ? behaviorCat.label : (getDecisionSource(currentDecision) || behaviorCat.label)
                         behaviorLine = behaviorCat.key === 'orbit'
                             ? `<br/><span style="color:${behaviorCat.color}">${behaviorHead}</span>`
@@ -995,8 +993,6 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                         }
                     }
                     const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})${healthLine}${behaviorLine}${extractLine}${lootLine}`
-                    // 'orbit' keeps its green ring (marks an ORBIT-controlled bot); only 'idle' and vanilla
-                    // 'patrol' stay ring-less as the calm default state.
                     const ringColor = behaviorCat && behaviorCat.key !== 'idle' && behaviorCat.key !== 'patrol' ? behaviorCat.color : undefined
                     const hpPct = (currentHealth != null && maxHealth != null && maxHealth > 0) ? Math.round((currentHealth / maxHealth) * 100) : undefined
                     const isFocused = playerFocusRef.current === playerId
@@ -1032,8 +1028,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                         marker._rr_normalOpacity = 1
                     }
                     renderedPlayerIds.add(playerId)
-                    // Keep the dashed objective line's bot-end on the live marker position (the objective layer
-                    // only rebuilds on coarse deps, so the line would otherwise lag a fast-moving bot).
+                    // Keep the objective line's bot-end pinned to the live marker (see objectiveLineRef).
                     const objLine = objectiveLineRef.current.get(playerId)
                     if (objLine) {
                         const ll = objLine.getLatLngs() as L.LatLng[]
@@ -1995,7 +1990,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             'ContainerLoot': { icon: '\u{1F4E6}', color: '#FACC15' }, // package, yellow
             'LooseLoot':     { icon: '\u{1F48E}', color: '#FBBF24' }, // gem, amber
             'Quest':         { icon: '\u{1F4CB}', color: '#D946EF' }, // clipboard, fuchsia
-            'Synthetic':     { icon: '\u{1F500}', color: '#22C55E' }, // shuffle, green (ORBIT theme)
+            'Synthetic':     { icon: '\u{1F500}', color: '#22C55E' }, // shuffle, green
             'Exfil':         { icon: '\u{1F6AA}', color: '#2DD4BF' }, // door, teal
         }
 

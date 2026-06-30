@@ -61,11 +61,8 @@ export function getMarkerLabel(player: any): string | null {
     return null
 }
 
-// Single source of truth for a bot's TYPE key — BOSS, GOON, FOLLOWER, COMBINE, RUAF, UNTAR, BLACKDIV,
-// MERCENARY, ISB, SNIPER, RAIDER, ROGUE, CULT, BLOODHOUND, INFECTED, PLAYER_SCAV, SCAV, OTHER, ... or UNKNOWN.
-// Resolves botMapping.json first, then infers from the "NAME|CATEGORY" WildSpawnType string for faction-mod
-// bots (FACTION_MOD bosses, the Combine family, generic followers). Every colour / faction-label / role /
-// grouping helper builds on this, so a new faction-mod is taught in ONE place here.
+// Single source of truth for a bot's type key: botMapping.json first, then the "NAME|CATEGORY" WildSpawnType
+// string for faction-mod bots. All colour/label/role/grouping helpers build on this.
 export function resolveBotType(player: any): string {
     if (!player) return 'UNKNOWN'
     let botMapping = (BotMapping as any)[player.type]
@@ -139,9 +136,8 @@ export function getFactionRole(player: any): string {
         if (typeName === p) { role = typeName; break }
         if (typeName.startsWith(p + ' ')) { role = typeName.slice(p.length + 1); break }
     }
-    // Combine-mod roles have no space (COMBINESOLDIER, COMBINEELITE) — strip the prefix so it reads "Soldier".
+    // Combine-mod roles have no space separator (e.g. COMBINESOLDIER), so strip the prefix to read "Soldier".
     if (role.startsWith('COMBINE') && role.length > 'COMBINE'.length) role = role.slice('COMBINE'.length)
-    // Title case
     return role.toLowerCase().split(' ').filter(Boolean)
         .map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
 }

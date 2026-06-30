@@ -141,8 +141,7 @@ export function formatDecisionLabel(decision: string | undefined | null): string
     if (decision.startsWith('BL:')) return decision.substring(3).replace(/^Bot/, '').replace(/Layer$/, '')
     if (decision.startsWith('Phobos:')) return formatObjectiveCategory(decision.substring(7))
     if (decision.startsWith('Orbit:')) {
-        // ORBIT patrolling renders as just the green "Orbiting" category label (Shynd's pun) — no redundant
-        // ": Patrolling" suffix after it.
+        // 'Synthetic' is patrolling: rendered as the bare category label, no decision suffix.
         const cat = decision.substring(6)
         return cat === 'Synthetic' ? '' : formatObjectiveCategory(cat)
     }
@@ -151,25 +150,18 @@ export function formatDecisionLabel(decision: string | undefined | null): string
     return clean.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase()).trim()
 }
 
-// SAIN decision/layer enum names (PascalCase) that arrive WITHOUT a "SAIN:" prefix — used to attribute the
-// source mod. Kept in sync with the SAIN sections of DECISION_TO_CATEGORY above.
+// SAIN decision/layer enum names that arrive without a "SAIN:" prefix. Keep in sync with the SAIN sections
+// of DECISION_TO_CATEGORY above.
 const SAIN_DECISIONS = new Set<string>([
-    // ECombatDecision
     'MoveToEngage', 'StandAndShoot', 'ShootDistantEnemy', 'DogFight', 'RushEnemy', 'MeleeAttack',
     'FightZombies', 'Freeze', 'Search', 'SeekCover', 'ShiftCover', 'Retreat', 'ThrowGrenade',
-    // ESquadDecision
     'PushSuppressedEnemy', 'GroupSearch', 'Suppress', 'Help', 'Regroup',
-    // ESelfActionType
     'Reload', 'FirstAid', 'Surgery', 'Stims',
-    // ESAINLayer (broad)
     'Combat', 'Squad', 'Extract', 'Run', 'Peace', 'AvoidThreat',
-    // BigBrain numeric SAIN layer ids
-    '9000', '9001', '9002', '9003', '9004',
+    '9000', '9001', '9002', '9003', '9004', // BigBrain numeric SAIN layer ids
 ])
 
-// Which MOD is driving this decision. The behaviour colour already conveys the CATEGORY (via the legend), so
-// the tooltip head shows the source instead: "SAIN: Seek Cover", "ORBIT: Looking for loot", "Vanilla: Patrol
-// Follower". Returns '' when there's nothing to attribute (idle / no decision).
+// The mod driving this decision, shown as the tooltip head since the colour already conveys the category.
 export function getDecisionSource(decision: string | undefined | null): string {
     if (!decision) return ''
     if (decision.startsWith('Orbit:')) return 'ORBIT'

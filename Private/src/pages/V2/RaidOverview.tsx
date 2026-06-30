@@ -346,9 +346,7 @@ export default function RaidOverview() {
           let difficulty = player.mod_SAIN_difficulty;
           let brain = getPlayerBrain(player);
 
-          // Faction-mod bots (RUAF, UNTAR, BLACKDIV, MERCENARY, Combine): show their specific
-          // role (Rifleman, Soldier, Elite, etc.). Combine sits under the generic FACTION_MOD category, so
-          // detect it by the "combine" WildSpawnType prefix instead.
+          // Combine sits under the generic FACTION_MOD category, so detect it by the "combine" prefix.
           const category = typeof player.type === "string" && player.type.includes("|") ? player.type.split("|")[1] : "";
           const roleName = typeof player.type === "string" && player.type.includes("|") ? player.type.split("|")[0].toLowerCase() : "";
           if (["RUAF", "UNTAR", "BLACKDIV", "MERCENARY"].includes(category) || (category === "FACTION_MOD" && roleName.startsWith("combine"))) {
