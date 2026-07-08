@@ -127,7 +127,11 @@ namespace RAID_REVIEW
                                     // but mod.cs already identified them correctly via player.Profile.Info.Settings.Role.
                                     bool currentIsGeneric = trackingPlayer.type == "BOT" || trackingPlayer.type == "UNKNOWN" || trackingPlayer.type == "SCAV|SCAV";
                                     bool sainIsGeneric = sainType == "SCAV|SCAV" || sainType == "SCAV GROUP|SCAV" || sainType == "CRAZY SCAV EVENT|SCAV" || sainType == "TAGGED AND CURSED SCAV|SCAV";
-                                    if (currentIsGeneric || !sainIsGeneric)
+                                    // Never clobber the hunt override: SAIN only sees the raw pmcBot role
+                                    // ("RAIDER|FOLLOWER") for MoreBotsAPI hunt squads, mod.cs already
+                                    // identified them via their spawn id.
+                                    bool currentIsHuntOverride = trackingPlayer.type == "UNTAR HUNTER|UNTAR";
+                                    if ((currentIsGeneric || !sainIsGeneric) && !currentIsHuntOverride)
                                     {
                                         trackingPlayer.type = sainType;
                                     }
@@ -446,6 +450,11 @@ namespace RAID_REVIEW
                             break;
                         case "ISBFireflyShielder02":
                             RR_WildSpawnType = "ISB FIREFLY SHIELDER 2|ISB";
+                            break;
+                        // ISB 1.0 "White Tusk" commander duo — display name per Firefly.
+                        case "ISBBossCommander":
+                        case "ISBFollowerCommander":
+                            RR_WildSpawnType = "WHITE TUSK|ISB";
                             break;
 
                         // Manimal's Combine Soldiers (keep in sync with MapWildSpawnType in mod.cs)

@@ -74,6 +74,25 @@ namespace RAID_REVIEW
         public static GameObject Hook;
 
         /// <summary>
+        /// MoreBotsAPI "hunt" squads (e.g. UNTAR Go Home raider hunts on Woods/Customs) spawn as plain
+        /// pmcBot with no custom role, so role mapping alone shows them as vanilla Raiders. The API's own
+        /// discriminator is the spawn id: SpawnParams.Id_spawn contains "hunt" (see MoreBotsAPI
+        /// HuntManager.OnBotCreated). Same check here.
+        /// </summary>
+        public static bool IsHuntSpawn(Player player)
+        {
+            try
+            {
+                var idSpawn = player?.AIData?.BotOwner?.SpawnProfileData?.SpawnParams?.Id_spawn;
+                return idSpawn != null && idSpawn.ToLower().Contains("hunt");
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        /// <summary>
         /// Maps a WildSpawnType to a Raid Review display string ("NAME|CATEGORY").
         /// Used as a fallback when SAIN is not installed.
         /// </summary>
@@ -167,6 +186,9 @@ namespace RAID_REVIEW
                 case "ISBFireflyFollowerVipper": return "ISB FIREFLY VIPPER|ISB";
                 case "ISBFireflyShielder01": return "ISB FIREFLY SHIELDER 1|ISB";
                 case "ISBFireflyShielder02": return "ISB FIREFLY SHIELDER 2|ISB";
+                // ISB 1.0 "White Tusk" commander duo (enum values 13707/13708) — display name per Firefly.
+                case "ISBBossCommander": return "WHITE TUSK|ISB";
+                case "ISBFollowerCommander": return "WHITE TUSK|ISB";
                 // Manimal's Combine Soldiers
                 case "CombineSoldier": return "COMBINE SOLDIER|COMBINE";
                 case "CombineShotgunner": return "COMBINE SHOTGUNNER|COMBINE";
@@ -834,6 +856,10 @@ namespace RAID_REVIEW
                                 {
                                     var role = player.Profile.Info.Settings.Role;
                                     trackingPlayer.type = MapWildSpawnType(role);
+                                    // UNTAR Go Home raider hunts: plain pmcBot spawned by MoreBotsAPI's
+                                    // hunt system — label as UNTAR hunter instead of a vanilla Raider.
+                                    if (role.ToString() == "pmcBot" && IsHuntSpawn(player))
+                                        trackingPlayer.type = "UNTAR HUNTER|UNTAR";
                                     // Override cyrillic names for known bosses
                                     if (role.ToString() == "bossPartisan") trackingPlayer.name = "Partizan";
                                 }
