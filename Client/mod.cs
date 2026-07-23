@@ -189,6 +189,9 @@ namespace RAID_REVIEW
                 // ISB 1.0 "White Tusk" commander duo (enum values 13707/13708) — display name per Firefly.
                 case "ISBBossCommander": return "WHITE TUSK|ISB";
                 case "ISBFollowerCommander": return "WHITE TUSK|ISB";
+                // Wedge boss mod (prepatch pins wedge=848430 / wedgeguard=848431 into the enum)
+                case "wedge": return "WEDGE|BOSS";
+                case "wedgeguard": return "WEDGE GUARD|FOLLOWER";
                 // Manimal's Combine Soldiers
                 case "CombineSoldier": return "COMBINE SOLDIER|COMBINE";
                 case "CombineShotgunner": return "COMBINE SHOTGUNNER|COMBINE";

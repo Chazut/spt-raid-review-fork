@@ -26,6 +26,7 @@ export function getMarkerLabel(player: any): string | null {
     if (type.includes('KABAN')) return 'Kb'
     if (type.includes('KOLONTAY')) return 'Ko'
     if (type.includes('PARTIZAN')) return 'P'
+    if (type.includes('WEDGE')) return 'We'
 
     if (type.includes('KNIGHT')) return 'Kn'
     if (type.includes('BIGPIPE')) return 'BP'

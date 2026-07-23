@@ -457,6 +457,14 @@ namespace RAID_REVIEW
                             RR_WildSpawnType = "WHITE TUSK|ISB";
                             break;
 
+                        // Wedge boss mod (keep in sync with MapWildSpawnType in mod.cs)
+                        case "wedge":
+                            RR_WildSpawnType = "WEDGE|BOSS";
+                            break;
+                        case "wedgeguard":
+                            RR_WildSpawnType = "WEDGE GUARD|FOLLOWER";
+                            break;
+
                         // Manimal's Combine Soldiers (keep in sync with MapWildSpawnType in mod.cs)
                         case "CombineSoldier":
                             RR_WildSpawnType = "COMBINE SOLDIER|COMBINE";

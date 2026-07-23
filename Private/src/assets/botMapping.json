@@ -135,6 +135,14 @@
         "name": "Kaban Sniper",
         "type": "FOLLOWER"
     },
+    "WEDGE|BOSS": {
+        "name": "Wedge",
+        "type": "BOSS"
+    },
+    "WEDGE GUARD|FOLLOWER": {
+        "name": "Wedge Guard",
+        "type": "FOLLOWER"
+    },
     "KOLONTAY|BOSS": {
         "name": "Kolontay",
         "type": "BOSS"
