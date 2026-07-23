@@ -688,7 +688,7 @@ namespace RAID_REVIEW
             EnableLegacyPhobos = Config.Bind<bool>("Legacy Integrations", "Enable legacy Phobos integration", true,
                 "Captures bot-objective data from the legacy upstream Phobos mod (com.janky.phobos). NO SUPPORT — uses reflection (the mod doesn't expose a public API). Disable if you see errors.");
             EnableLegacyQuestingBots = Config.Bind<bool>("Legacy Integrations", "Enable legacy QuestingBots integration", true,
-                "Captures quest data from the QuestingBots mod (com.danw.questingbots). NO SUPPORT — uses reflection. Disable if you see errors.");
+                "Only used with QuestingBots older than 0.11.0 (newer versions use the official interop API, always enabled). NO SUPPORT — uses reflection. Disable if you see errors.");
 
             // HTTP/Websocket Endpoint Builders
             RAID_REVIEW_WS_Server = (ServerTLS.Value ? "wss://" : "ws://") + ServerAddress.Value + (ServerWsPort.Value != "" ? ":" + ServerWsPort.Value : "");
