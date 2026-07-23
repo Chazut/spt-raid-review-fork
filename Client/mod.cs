@@ -994,8 +994,12 @@ namespace RAID_REVIEW
                                             if (_seenLayerNames.Add(layerName))
                                                 Logger.LogInfo($"RAID_REVIEW :::: BRAIN_LAYER :::: {layerName}");
 
-                                            // BigBrain layer names from various mods
-                                            if (layerName.Contains("Loot"))
+                                            // BigBrain layer names from various mods. "LootPatrol" is a
+                                            // vanilla BSG layer — only credit LootingBots for other
+                                            // Loot* layers, and only when the mod is actually loaded.
+                                            if (layerName == "LootPatrol")
+                                                decision = layerName;
+                                            else if (layerName.Contains("Loot") && RAID_REVIEW__DETECTED_MODS.Contains("LOOTING_BOTS"))
                                                 decision = "LootingBots:" + layerName;
                                             else if (layerName.Contains("Follower") || layerName.Contains("Regroup"))
                                                 decision = "BL:" + layerName;

@@ -3276,7 +3276,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                     }
                                                 }
                                                 return Object.entries(latestByBot)
-                                                    .filter(([profileId, q]) => q.status !== 'Completed' && q.status !== 'Archived' && q.status !== 'Failed' && !deadOrGone.has(profileId))
+                                                    .filter(([profileId, q]) => q.questName && q.status !== 'None' && q.status !== 'Completed' && q.status !== 'Archived' && q.status !== 'Failed' && !deadOrGone.has(profileId))
                                                     .map(([profileId, q]) => {
                                                         const player = raidData?.players?.find(p => p.profileId === profileId)
                                                         const botName = player?.name || profileId.slice(0, 8)
