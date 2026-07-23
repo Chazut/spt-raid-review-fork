@@ -135,6 +135,14 @@
         "name": "Kaban Sniper",
         "type": "FOLLOWER"
     },
+    "WEDGE|BOSS": {
+        "name": "Wedge",
+        "type": "BOSS"
+    },
+    "WEDGE GUARD|FOLLOWER": {
+        "name": "Wedge Guard",
+        "type": "FOLLOWER"
+    },
     "KOLONTAY|BOSS": {
         "name": "Kolontay",
         "type": "BOSS"
@@ -243,6 +251,10 @@
         "name": "UNTAR Officer",
         "type": "UNTAR"
     },
+    "UNTAR HUNTER|UNTAR": {
+        "name": "UNTAR Hunter",
+        "type": "UNTAR"
+    },
     "BLACK DIV LEAD|BLACKDIV": {
         "name": "Black Div Lead",
         "type": "BLACKDIV"
@@ -289,6 +301,10 @@
     },
     "ISB FIREFLY SHIELDER 2|ISB": {
         "name": "ISB Firefly Shielder 2",
+        "type": "ISB"
+    },
+    "WHITE TUSK|ISB": {
+        "name": "White Tusk",
         "type": "ISB"
     },
     "COMBINE SOLDIER|COMBINE": {

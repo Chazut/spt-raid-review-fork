@@ -23,7 +23,7 @@ using EFT.Interactive;
 
 namespace RAID_REVIEW
 {
-    [BepInPlugin("ekky.raidreview", "Raid Review", "1.3.0")]
+    [BepInPlugin("ekky.raidreview", "Raid Review", "1.4.0")]
     [BepInDependency("me.sol.sain", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("com.danw.questingbots", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("com.janky.phobos", BepInDependency.DependencyFlags.SoftDependency)]
@@ -72,6 +72,25 @@ namespace RAID_REVIEW
         public static ConfigEntry<bool> EnableLegacyPhobos;
         public static ConfigEntry<bool> EnableLegacyQuestingBots;
         public static GameObject Hook;
+
+        /// <summary>
+        /// MoreBotsAPI "hunt" squads (e.g. UNTAR Go Home raider hunts on Woods/Customs) spawn as plain
+        /// pmcBot with no custom role, so role mapping alone shows them as vanilla Raiders. The API's own
+        /// discriminator is the spawn id: SpawnParams.Id_spawn contains "hunt" (see MoreBotsAPI
+        /// HuntManager.OnBotCreated). Same check here.
+        /// </summary>
+        public static bool IsHuntSpawn(Player player)
+        {
+            try
+            {
+                var idSpawn = player?.AIData?.BotOwner?.SpawnProfileData?.SpawnParams?.Id_spawn;
+                return idSpawn != null && idSpawn.ToLower().Contains("hunt");
+            }
+            catch
+            {
+                return false;
+            }
+        }
 
         /// <summary>
         /// Maps a WildSpawnType to a Raid Review display string ("NAME|CATEGORY").
@@ -167,6 +186,12 @@ namespace RAID_REVIEW
                 case "ISBFireflyFollowerVipper": return "ISB FIREFLY VIPPER|ISB";
                 case "ISBFireflyShielder01": return "ISB FIREFLY SHIELDER 1|ISB";
                 case "ISBFireflyShielder02": return "ISB FIREFLY SHIELDER 2|ISB";
+                // ISB 1.0 "White Tusk" commander duo (enum values 13707/13708) — display name per Firefly.
+                case "ISBBossCommander": return "WHITE TUSK|ISB";
+                case "ISBFollowerCommander": return "WHITE TUSK|ISB";
+                // Wedge boss mod (prepatch pins wedge=848430 / wedgeguard=848431 into the enum)
+                case "wedge": return "WEDGE|BOSS";
+                case "wedgeguard": return "WEDGE GUARD|FOLLOWER";
                 // Manimal's Combine Soldiers
                 case "CombineSoldier": return "COMBINE SOLDIER|COMBINE";
                 case "CombineShotgunner": return "COMBINE SHOTGUNNER|COMBINE";
@@ -663,7 +688,7 @@ namespace RAID_REVIEW
             EnableLegacyPhobos = Config.Bind<bool>("Legacy Integrations", "Enable legacy Phobos integration", true,
                 "Captures bot-objective data from the legacy upstream Phobos mod (com.janky.phobos). NO SUPPORT — uses reflection (the mod doesn't expose a public API). Disable if you see errors.");
             EnableLegacyQuestingBots = Config.Bind<bool>("Legacy Integrations", "Enable legacy QuestingBots integration", true,
-                "Captures quest data from the QuestingBots mod (com.danw.questingbots). NO SUPPORT — uses reflection. Disable if you see errors.");
+                "Only used with QuestingBots older than 0.11.0 (newer versions use the official interop API, always enabled). NO SUPPORT — uses reflection. Disable if you see errors.");
 
             // HTTP/Websocket Endpoint Builders
             RAID_REVIEW_WS_Server = (ServerTLS.Value ? "wss://" : "ws://") + ServerAddress.Value + (ServerWsPort.Value != "" ? ":" + ServerWsPort.Value : "");
@@ -834,6 +859,10 @@ namespace RAID_REVIEW
                                 {
                                     var role = player.Profile.Info.Settings.Role;
                                     trackingPlayer.type = MapWildSpawnType(role);
+                                    // UNTAR Go Home raider hunts: plain pmcBot spawned by MoreBotsAPI's
+                                    // hunt system — label as UNTAR hunter instead of a vanilla Raider.
+                                    if (role.ToString() == "pmcBot" && IsHuntSpawn(player))
+                                        trackingPlayer.type = "UNTAR HUNTER|UNTAR";
                                     // Override cyrillic names for known bosses
                                     if (role.ToString() == "bossPartisan") trackingPlayer.name = "Partizan";
                                 }
@@ -965,8 +994,12 @@ namespace RAID_REVIEW
                                             if (_seenLayerNames.Add(layerName))
                                                 Logger.LogInfo($"RAID_REVIEW :::: BRAIN_LAYER :::: {layerName}");
 
-                                            // BigBrain layer names from various mods
-                                            if (layerName.Contains("Loot"))
+                                            // BigBrain layer names from various mods. "LootPatrol" is a
+                                            // vanilla BSG layer — only credit LootingBots for other
+                                            // Loot* layers, and only when the mod is actually loaded.
+                                            if (layerName == "LootPatrol")
+                                                decision = layerName;
+                                            else if (layerName.Contains("Loot") && RAID_REVIEW__DETECTED_MODS.Contains("LOOTING_BOTS"))
                                                 decision = "LootingBots:" + layerName;
                                             else if (layerName.Contains("Follower") || layerName.Contains("Regroup"))
                                                 decision = "BL:" + layerName;

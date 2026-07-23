@@ -38,6 +38,15 @@ namespace RAID_REVIEW
             if (_reflectionInit) return;
             _reflectionInit = true;
 
+            // QB >= 0.11.0 ships an official interop surface (QuestingBotsExternal) — prefer it and
+            // skip the unsupported legacy reflection entirely.
+            if (QuestingBotsInterop.Init())
+            {
+                _available = true;
+                LoggerInstance.Log.LogInfo("RAID_REVIEW :::: QUESTINGBOTS :::: Official interop detected (QB >= 0.11.0) — legacy reflection skipped");
+                return;
+            }
+
             try
             {
                 // BotJobAssignmentFactory has extension methods on BotOwner
@@ -113,6 +122,50 @@ namespace RAID_REVIEW
             {
                 var botOwner = player.AIData?.BotOwner;
                 if (botOwner == null) return null;
+
+                // Official interop path (QB >= 0.11.0).
+                if (QuestingBotsInterop.Init())
+                {
+                    var info = QuestingBotsInterop.GetBotQuestInfo(botOwner);
+                    if (info == null || !info.IsValid) return null;
+
+                    // No active quest: emit a single quiet "None" record so the timeline closes the
+                    // previous quest, without churning on decision/action changes.
+                    if (!info.HasAQuest)
+                    {
+                        return new TrackingBotQuest
+                        {
+                            sessionId = sessionId,
+                            profileId = player.ProfileId,
+                            time = time,
+                            questName = "",
+                            isEFTQuest = false,
+                            actionType = "",
+                            status = "None",
+                            objectiveX = 0,
+                            objectiveY = 0,
+                            objectiveZ = 0
+                        };
+                    }
+
+                    // The official surface exposes no assignment-status string; HasAQuest implies an
+                    // active (Pending/Active) assignment, which is what the decision override keys on.
+                    var loc = info.QuestLocation;
+                    var hasLoc = !float.IsNegativeInfinity(loc.x);
+                    return new TrackingBotQuest
+                    {
+                        sessionId = sessionId,
+                        profileId = player.ProfileId,
+                        time = time,
+                        questName = info.QuestName,
+                        isEFTQuest = info.IsEftQuest,
+                        actionType = info.CurrentActionType,
+                        status = "Active",
+                        objectiveX = hasLoc ? loc.x : 0,
+                        objectiveY = hasLoc ? loc.y : 0,
+                        objectiveZ = hasLoc ? loc.z : 0
+                    };
+                }
 
                 // Call GetCurrentJobAssignment(botOwner, false) — false = don't trigger reassignment
                 object assignment;

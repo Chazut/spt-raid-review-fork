@@ -24,15 +24,24 @@ namespace RAID_REVIEW {
                 // usability — users without these mods can flip them off).
                 if (RAID_REVIEW.DetectMod("com.danw.questingbots"))
                 {
-                    if (RAID_REVIEW.EnableLegacyQuestingBots != null && RAID_REVIEW.EnableLegacyQuestingBots.Value)
+                    // QB >= 0.11.0 ships an official interop surface (QuestingBotsExternal) — the
+                    // supported path, always enabled. Older versions fall back to the legacy
+                    // reflection integration, still gated by its F12 toggle.
+                    if (QuestingBotsInterop.Init())
                     {
-                        LoggerInstance.Log.LogInfo("RAID_REVIEW :::: INFO :::: Found 'QuestingBots' — legacy integration enabled. NO SUPPORT — uses reflection. Disable in F12 if you see errors.");
+                        LoggerInstance.Log.LogInfo("RAID_REVIEW :::: INFO :::: Found 'QuestingBots' — official interop available (QB >= 0.11.0), enabling integration.");
+                        RAID_REVIEW.DANW_QUESTINGBOTS__DETECTED = true;
+                        RAID_REVIEW.RAID_REVIEW__DETECTED_MODS.Add("QUESTING_BOTS");
+                    }
+                    else if (RAID_REVIEW.EnableLegacyQuestingBots != null && RAID_REVIEW.EnableLegacyQuestingBots.Value)
+                    {
+                        LoggerInstance.Log.LogInfo("RAID_REVIEW :::: INFO :::: Found 'QuestingBots' (pre-0.11) — legacy integration enabled. NO SUPPORT — uses reflection. Disable in F12 if you see errors.");
                         RAID_REVIEW.DANW_QUESTINGBOTS__DETECTED = true;
                         RAID_REVIEW.RAID_REVIEW__DETECTED_MODS.Add("QUESTING_BOTS");
                     }
                     else
                     {
-                        LoggerInstance.Log.LogInfo("RAID_REVIEW :::: INFO :::: Found 'QuestingBots' — legacy integration disabled by user toggle.");
+                        LoggerInstance.Log.LogInfo("RAID_REVIEW :::: INFO :::: Found 'QuestingBots' (pre-0.11) — legacy integration disabled by user toggle.");
                     }
                 }
                 if (RAID_REVIEW.DetectMod("com.janky.phobos"))
