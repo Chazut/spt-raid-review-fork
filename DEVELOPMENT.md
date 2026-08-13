@@ -4,17 +4,17 @@ This guide will help you get started if you want to contribute to the project or
 
 ## Requirements
 
-- .NET 9 SDK (for ServerMod)
+- .NET 10 SDK (for ServerMod)
 - .NET Framework 4.7.2 targeting pack (for Client)
 - Visual Studio 2022 or VSCode with C# extensions
 - Node.js v18+ (for frontend)
-- Escape From Tarkov + SPT 4.0.X installation
+- Escape From Tarkov + SPT 4.1.X installation
 
 ## Project Structure
 
 ```
 Client/       C# BepInEx plugin (.NET 4.7.2) — patches game methods, sends data via WebSocket
-ServerMod/    C# SPT 4.0 server mod (.NET 9) — Kestrel HTTP/WS server, SQLite, REST API
+ServerMod/    C# SPT 4.1 server mod (.NET 10) — Kestrel HTTP/WS server, SQLite, REST API
 Private/      React 18 + TypeScript + Vite — web UI for raid review and replay
 ```
 
@@ -25,8 +25,8 @@ The BepInEx plugin patches EFT game methods to capture raid data and stream it v
 ### Setup
 
 1. Open the solution in Visual Studio 2022 (or use `dotnet build` from CLI).
-2. Review `RAID-REVIEW.csproj` for required dependencies — they are referenced from `dependencies/4.0.X/`.
-3. Copy the required DLLs from your SPT installation's `BepInEx/plugins/spt/` and `EscapeFromTarkov_Data/Managed/` folders into `Client/dependencies/4.0.X/`.
+2. Review `RAID-REVIEW.csproj` for required dependencies — they are referenced from `dependencies/4.1.X/`.
+3. Copy the required DLLs from your SPT installation's `BepInEx/core/`, `BepInEx/plugins/spt/` and `EscapeFromTarkov_Data/Managed/` folders into `Client/dependencies/4.1.X/`.
 4. Update `<OutputPath>` in `RAID-REVIEW.csproj` to point to your SPT installation's `BepInEx/plugins/` folder.
 
 ### Build
@@ -40,14 +40,14 @@ Output: `RAID_REVIEW__0.4.0.dll` deployed to the configured `<OutputPath>`.
 
 ## Server Mod `/ServerMod`
 
-The C# server mod runs inside the SPT 4.0 server process. It starts a standalone Kestrel server on two ports:
+The C# server mod runs inside the SPT 4.1 server process. It starts a standalone Kestrel server on two ports:
 - **Port 7828**: WebSocket — receives real-time data from the client mod
 - **Port 7829**: HTTP — serves the React frontend + REST API
 
 ### Setup
 
-1. Install [SPTarkov NuGet packages](https://nuget.pkg.github.com/sp-tarkov/): `SPTarkov.Common`, `SPTarkov.DI`, `SPTarkov.Server.Core` (v4.0.5).
-2. The `.csproj` auto-deploys to `C:\Games\SPT-4.0\SPT\user\mods\RaidReview\` after build — update this path if your SPT installation is elsewhere.
+1. Install the SPTarkov NuGet packages (on nuget.org): `SPTarkov.Common`, `SPTarkov.DI`, `SPTarkov.Server.Core` (v4.1.2).
+2. The `.csproj` auto-deploys to `C:\Games\SPT-4.1\SPT_Runtime\user\mods\RaidReview\` after build — update this path if your SPT installation is elsewhere. Note: in SPT 4.1 the server tree moved from `SPT/` to `SPT_Runtime/`.
 
 ### Build
 

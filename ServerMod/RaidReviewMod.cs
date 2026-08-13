@@ -1,6 +1,6 @@
+using SPTarkov.Common.Models.Logging;
 using SPTarkov.DI.Annotations;
 using SPTarkov.Server.Core.DI;
-using SPTarkov.Server.Core.Models.Utils;
 using RaidReview.Config;
 using RaidReview.Database;
 using RaidReview.DataIntegrity;
@@ -13,7 +13,7 @@ using System.Reflection;
 
 namespace RaidReview;
 
-[Injectable(InjectionType = InjectionType.Singleton, TypePriority = OnLoadOrder.PreSptModLoader + 1)]
+[Injectable(InjectionType = InjectionType.Singleton, TypePriority = OnLoadOrder.PostLoad + 1)]
 public class RaidReviewMod : IOnLoad
 {
     private readonly ISptLogger<RaidReviewMod> _sptLogger;
@@ -23,7 +23,7 @@ public class RaidReviewMod : IOnLoad
         _sptLogger = sptLogger;
     }
 
-    public async Task OnLoad()
+    public async Task OnLoadAsync(CancellationToken cancellationToken)
     {
         _sptLogger.Info("[RAID-REVIEW] Initializing Raid Review mod...");
 

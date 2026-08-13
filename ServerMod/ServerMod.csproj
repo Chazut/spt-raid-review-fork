@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <RootNamespace>RaidReview</RootNamespace>
     <AssemblyName>RaidReview</AssemblyName>
     <ImplicitUsings>enable</ImplicitUsings>
@@ -16,9 +16,9 @@
 
   <ItemGroup>
     <!-- SPTarkov packages are already in the SPT server folder — don't copy them to the mod folder -->
-    <PackageReference Include="SPTarkov.Common" Version="4.0.5" ExcludeAssets="runtime" />
-    <PackageReference Include="SPTarkov.DI" Version="4.0.5" ExcludeAssets="runtime" />
-    <PackageReference Include="SPTarkov.Server.Core" Version="4.0.5" ExcludeAssets="runtime" />
+    <PackageReference Include="SPTarkov.Common" Version="4.1.2" ExcludeAssets="runtime" />
+    <PackageReference Include="SPTarkov.DI" Version="4.1.2" ExcludeAssets="runtime" />
+    <PackageReference Include="SPTarkov.Server.Core" Version="4.1.2" ExcludeAssets="runtime" />
     <!-- SQLite — cross-platform bundle (e_sqlite3 works on Windows + Linux) -->
     <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="9.0.0" />
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.2" />
@@ -36,7 +36,7 @@
   <!-- Deploy to SPT user/mods folder after build with clean structure. -->
   <Target Name="DeployToSpt" AfterTargets="Build">
     <ItemGroup>
-      <SptInstall Include="C:\Games\SPT-4.0-hardcore\SPT\user\mods\RaidReview" Condition="Exists('C:\Games\SPT-4.0-hardcore\SPT\user\mods')" />
+      <SptInstall Include="C:\Games\SPT-4.1\SPT_Runtime\user\mods\RaidReview" Condition="Exists('C:\Games\SPT-4.1\SPT_Runtime')" />
     </ItemGroup>
     <ItemGroup>
       <ModDlls Include="$(OutputPath)*.dll"

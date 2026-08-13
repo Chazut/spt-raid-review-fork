@@ -40,7 +40,8 @@ cd "$current_dir"
 
 # 4. Package server mod
 echo ">> Packaging server mod..."
-server_dest="$dist_folder/SPT/user/mods/RaidReview"
+# SPT 4.1: server tree moved from SPT/ to SPT_Runtime/
+server_dest="$dist_folder/SPT_Runtime/user/mods/RaidReview"
 mkdir -p "$server_dest"
 
 # Copy managed DLLs flat (must be next to RaidReview.dll — .NET resolves them before any mod code runs)
