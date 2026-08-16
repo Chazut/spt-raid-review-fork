@@ -6,10 +6,18 @@ export function msToHMS( ms: number ) : string {
     return ''
 }
 
+// Strips Unity rich-text tags (color/b/i/size) that item-renaming mods inject
+// into display names — the game renders them, the web UI would show raw tags.
+// Applied here (and on server ingest) so names from older raids are clean too.
+export function stripUnityRichText(value: string): string {
+  if (!value || value.indexOf('<') === -1) return value;
+  return value.replace(/<\/?(color|b|i|size)(=[^>]*)?>/gi, '');
+}
+
 export function intl(string: string, intl_dir: Record<string, string>) {
   const translated = intl_dir[string];
   if (translated) return translated;
-  return string;
+  return stripUnityRichText(string);
 }
 
 export const bodypart = {

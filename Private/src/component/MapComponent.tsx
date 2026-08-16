@@ -9,7 +9,7 @@ import { start } from 'repl';
 import L from 'leaflet';
 
 import api from '../api/api.js';
-import { msToHMS, intl } from '../helpers/index.js';
+import { msToHMS, intl, stripUnityRichText } from '../helpers/index.js';
 import { calculateNewPosition, findInsertIndex } from '../modules/utils.js'
 import { useMapImages } from '../modules/maps-index.js';
 import { TrackingPositionalData, TrackingLooseLootItem, TrackingPlayerInventoryItem } from '../types/api_types.js';
@@ -464,7 +464,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             interactive: false,
         })
         ring.bindTooltip(
-            `<span style="color:${color}">${isC ? '\u25A0' : '\u25C6'}</span> ${item.itemName}${item.qty > 1 ? ' x' + item.qty : ''} \u2014 \u20BD${tp.toLocaleString()}`,
+            `<span style="color:${color}">${isC ? '\u25A0' : '\u25C6'}</span> ${stripUnityRichText(item.itemName)}${item.qty > 1 ? ' x' + item.qty : ''} \u2014 \u20BD${tp.toLocaleString()}`,
             { direction: 'top', offset: [0, -14], className: 'player-tooltip player-tooltip-html', permanent: true }
         )
         ring.addTo(MAP)
@@ -1737,7 +1737,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                 interactive: true,
             })
             marker.bindTooltip(
-                `<span style="color:${color}">\u25C6</span> ${item.itemName}${item.qty > 1 ? ' x' + item.qty : ''} \u2014 \u20BD${totalPrice.toLocaleString()}`,
+                `<span style="color:${color}">\u25C6</span> ${stripUnityRichText(item.itemName)}${item.qty > 1 ? ' x' + item.qty : ''} \u2014 \u20BD${totalPrice.toLocaleString()}`,
                 { direction: 'top', offset: [0, -8], className: 'player-tooltip player-tooltip-html' }
             )
             marker._rr_looseLoot = true
@@ -1754,7 +1754,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             let tooltipHtml = `<span style="color:${color}">\u25A0</span> <strong>${cName}</strong> (${items.length}) \u2014 \u20BD${containerTotal.toLocaleString()}<div style="margin-top:3px;border-top:1px solid rgba(255,255,255,0.2);padding-top:3px;">`
             for (const item of items.sort((a, b) => (b.price * b.qty) - (a.price * a.qty))) {
                 const tp = item.price * item.qty
-                tooltipHtml += `<div style="font-size:10px;"><span style="color:${getLootPriceColor(tp)}">${item.itemName}</span>${item.qty > 1 ? ' x' + item.qty : ''} \u20BD${tp.toLocaleString()}</div>`
+                tooltipHtml += `<div style="font-size:10px;"><span style="color:${getLootPriceColor(tp)}">${stripUnityRichText(item.itemName)}</span>${item.qty > 1 ? ' x' + item.qty : ''} \u20BD${tp.toLocaleString()}</div>`
             }
             tooltipHtml += '</div>'
 
@@ -3215,7 +3215,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                         >
                                                             <span style={{ color: getLootPriceColor(tp), fontSize: '9px', flexShrink: 0 }}>{isC ? '\u25A0' : '\u25C6'}</span>
                                                             <span style={{ color: getLootPriceColor(tp), overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
-                                                                {item.itemName}
+                                                                {stripUnityRichText(item.itemName)}
                                                             </span>
                                                             <span style={{ opacity: 0.7, flexShrink: 0 }}>
                                                                 {item.qty > 1 ? `x${item.qty} ` : ''}{'\u20BD'}{tp.toLocaleString()}
@@ -3618,7 +3618,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                             {!isSlotCollapsed && group.items.map((item, idx) => (
                                                                 <div key={idx} className="flex justify-between" style={{ padding: '1px 0 1px 10px', fontSize: '12px' }}>
                                                                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>
-                                                                        {item.itemName}
+                                                                        {stripUnityRichText(item.itemName)}
                                                                     </span>
                                                                     <span style={{ opacity: 0.7 }}>
                                                                         {item.qty > 1 ? `x${item.qty} ` : ''}{!NON_LOOTABLE_SLOTS.test(group.name) && <>{'\u20BD'}{(item.price * item.qty).toLocaleString()}</>}
@@ -3642,7 +3642,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                                     {!isAttCollapsed && group.attachments.items.map((item, idx) => (
                                                                         <div key={idx} className="flex justify-between" style={{ padding: '1px 0 1px 10px', fontSize: '11px', opacity: 0.8 }}>
                                                                             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '55%' }}>
-                                                                                {item.itemName}
+                                                                                {stripUnityRichText(item.itemName)}
                                                                             </span>
                                                                             <span style={{ opacity: 0.6 }}>
                                                                                 {item.qty > 1 ? `x${item.qty} ` : ''}{'\u20BD'}{(item.price * item.qty).toLocaleString()}
@@ -3671,7 +3671,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                                                         {!isSgCollapsed && sg.items.map((item, idx) => (
                                                                             <div key={idx} className="flex justify-between" style={{ padding: '1px 0 1px 10px', fontSize: '11px', opacity: 0.8 }}>
                                                                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '55%' }}>
-                                                                                    {item.itemName}
+                                                                                    {stripUnityRichText(item.itemName)}
                                                                                 </span>
                                                                                 <span style={{ opacity: 0.6 }}>
                                                                                     {item.qty > 1 ? `x${item.qty} ` : ''}{'\u20BD'}{(item.price * item.qty).toLocaleString()}

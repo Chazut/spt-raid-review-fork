@@ -44,6 +44,9 @@ namespace RAID_REVIEW
         public string profileId { get; set; }
         public string killedId { get; set; }
         public string weapon {  get; set; }
+        // Weapon template id so the server can resolve the display name when the
+        // client can't (Fika headless: LocalizedShortName returns empty).
+        public string weaponTemplateId { get; set; }
         public float distance { get; set; }
         public string bodyPart {  get; set; }
         public string type { get; set; }

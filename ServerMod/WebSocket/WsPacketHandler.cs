@@ -237,7 +237,7 @@ public class WsPacketHandler
                         ("$time", GetString(payload, "time")),
                         ("$profileId", GetString(payload, "profileId")),
                         ("$killedId", GetString(payload, "killedId")),
-                        ("$weapon", GetString(payload, "weapon")),
+                        ("$weapon", ResolveWeaponName(payload)),
                         ("$distance", GetString(payload, "distance")),
                         ("$bodyPart", GetString(payload, "bodyPart")),
                         ("$posKiller", GetString(payload, "positionKiller")),
@@ -497,9 +497,36 @@ public class WsPacketHandler
     private string ResolveItemName(JsonElement el)
     {
         var name = GetString(el, "itemName");
-        if (!string.IsNullOrEmpty(name)) return name;
+        if (!string.IsNullOrEmpty(name)) return StripUnityRichText(name);
         var templateId = GetString(el, "templateId");
-        return _itemResolver.ResolveShortName(templateId);
+        return StripUnityRichText(_itemResolver.ResolveShortName(templateId));
+    }
+
+    /// <summary>
+    /// Returns the weapon display name from a KILL payload, or resolves it from
+    /// the weapon template id when the client couldn't localize it (Fika
+    /// headless: LocalizedShortName returns empty on a stripped GameWorld).
+    /// </summary>
+    private string ResolveWeaponName(JsonElement el)
+    {
+        var weapon = GetString(el, "weapon");
+        if (!string.IsNullOrEmpty(weapon) && weapon != "?") return StripUnityRichText(weapon);
+        var templateId = GetString(el, "weaponTemplateId");
+        if (string.IsNullOrEmpty(templateId)) return weapon;
+        var resolved = _itemResolver.ResolveShortName(templateId);
+        return string.IsNullOrEmpty(resolved) ? weapon : StripUnityRichText(resolved);
+    }
+
+    /// <summary>
+    /// Strips Unity rich-text tags (color/b/i/size) that item-renaming mods
+    /// (e.g. item tier colouring) inject into display names. The game renders
+    /// them; the web UI would show them as raw text.
+    /// </summary>
+    private static string StripUnityRichText(string value)
+    {
+        if (string.IsNullOrEmpty(value) || !value.Contains('<')) return value;
+        return System.Text.RegularExpressions.Regex.Replace(
+            value, "</?(color|b|i|size)(=[^>]*)?>", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     }
 
     /// <summary>

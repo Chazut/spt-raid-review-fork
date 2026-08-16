@@ -31,6 +31,7 @@ namespace RAID_REVIEW
                         killedId = __instance.ProfileId,
                         distance = Vector3.Distance(aggressor.Position, __instance.Position),
                         weapon = damageInfo.Weapon == null ? "?" : damageInfo.Weapon.LocalizedShortName(),
+                        weaponTemplateId = damageInfo.Weapon == null ? "" : damageInfo.Weapon.TemplateId.ToString(),
                         bodyPart = bodyPart.ToString(),
                         type = lethalDamageType.ToString(),
                         positionKiller = JsonConvert.SerializeObject(aggressor.Position),
