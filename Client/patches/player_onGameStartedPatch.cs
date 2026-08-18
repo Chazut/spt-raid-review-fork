@@ -91,7 +91,7 @@ namespace RAID_REVIEW
 
                 if (RAID_REVIEW.RecordingNotification.Value && RAID_REVIEW.WebSocketConnected)
                 {
-                    try { NotificationManagerClass.DisplayMessageNotification("Raid Review Recording Started", ENotificationDurationType.Long); } catch { }
+                    try { EFT.Communications.NotificationManager.DisplayMessageNotification("Raid Review Recording Started", ENotificationDurationType.Long); } catch { }
                 }
 
                 if (RAID_REVIEW.SOLARINT_SAIN__DETECTED)

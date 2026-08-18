@@ -1,4 +1,5 @@
 ﻿using EFT;
+using EFT.Ballistics;
 using System.Reflection;
 using SPT.Reflection.Patching;
 using UnityEngine;
@@ -15,7 +16,7 @@ namespace RAID_REVIEW
         }
 
         [PatchPostfix]
-        private static void PatchPostFix(ref Player __instance, IPlayer aggressor, DamageInfoStruct damageInfo, EBodyPart bodyPart, EDamageType lethalDamageType)
+        private static void PatchPostFix(ref Player __instance, IPlayer aggressor, DamageInfo damageInfo, EBodyPart bodyPart, EDamageType lethalDamageType)
         {
             if (__instance.Location == "hideout") return;
 

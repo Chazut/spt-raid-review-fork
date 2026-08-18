@@ -44,7 +44,7 @@ namespace RAID_REVIEW
                 Telemetry.Send("END", JsonConvert.SerializeObject(RAID_REVIEW.trackingRaid));
 
                 if (RAID_REVIEW.RecordingNotification.Value && RAID_REVIEW.WebSocketConnected) {
-                    NotificationManagerClass.DisplayMessageNotification("Raid Review Recording Completed", ENotificationDurationType.Long);
+                    EFT.Communications.NotificationManager.DisplayMessageNotification("Raid Review Recording Completed", ENotificationDurationType.Long);
                 }
             }
 

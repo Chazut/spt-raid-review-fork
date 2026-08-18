@@ -11,6 +11,9 @@
 		<Copyright>2024 © Ekky</Copyright>
 		<AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
 		<OutputPath>C:\Games\SPT-4.1\BepInEx\plugins\</OutputPath>
+		<!-- Resolve references strictly from their HintPath. Without this, MSBuild's fallback search can
+		     silently pick the sibling dependencies\4.0.X copies (same simple names) over the 4.1.X ones. -->
+		<AssemblySearchPaths>{HintPathFromItem};{TargetFrameworkDirectory};{RawFileName}</AssemblySearchPaths>
 	</PropertyGroup>
 
 	<PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|AnyCPU'">

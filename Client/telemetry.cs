@@ -28,7 +28,7 @@ namespace RAID_REVIEW
             ws.OnOpen += (sender, e) => { 
                 Logger.LogInfo("[RAID-REVIEW] WebSocket connected."); 
                 RAID_REVIEW.WebSocketConnected = true;
-                NotificationManagerClass.DisplayMessageNotification("Raid Review Server Connected", ENotificationDurationType.Long);
+                EFT.Communications.NotificationManager.DisplayMessageNotification("Raid Review Server Connected", ENotificationDurationType.Long);
                 ws.Send("WS_CONNECTED"); 
             };
 
@@ -48,7 +48,7 @@ namespace RAID_REVIEW
                 }
                 catch (Exception ex)
                 {
-                    NotificationManagerClass.DisplayMessageNotification("Raid Review - Unable to Connect To Server", ENotificationDurationType.Long, ENotificationIconType.Alert);
+                    EFT.Communications.NotificationManager.DisplayMessageNotification("Raid Review - Unable to Connect To Server", ENotificationDurationType.Long, ENotificationIconType.Alert);
                     PreloaderUI.Instance.CloseErrorScreen();
                     PreloaderUI.Instance.ShowErrorScreen("Raid Review - Server Connection Error", "Raid Review was unable to connect to the Websocket server, please check 'Server IP' in the F12 menu and restart game.");
                     RAID_REVIEW.WebSocketConnected = false;

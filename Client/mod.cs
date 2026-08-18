@@ -475,7 +475,7 @@ namespace RAID_REVIEW
         /// <summary>Get handbook base price for an item (0 if handbook unavailable).</summary>
         public static int GetHandbookPrice(Item item)
         {
-            try { return (int)Singleton<HandbookClass>.Instance.GetBasePrice(item.TemplateId); }
+            try { return (int)Singleton<EFT.HandBook.Handbook>.Instance.GetBasePrice(item.TemplateId); }
             catch { return 0; }
         }
 

@@ -24,7 +24,7 @@ namespace RAID_REVIEW
         }
 
         [PatchPostfix]
-        private static void PatchPostFix(ref ClientGameWorld __instance, EftBulletClass shotResult)
+        private static void PatchPostFix(ref ClientGameWorld __instance, Shot shotResult)
         {
             try
             {
