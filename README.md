@@ -1,7 +1,7 @@
 # SPT Raid Review
-![Stars](https://img.shields.io/github/stars/Chazut/ORBIT?style=flat-square&label=STARS&color=007ec6)
-![Issues](https://img.shields.io/github/issues/Chazut/ORBIT?style=flat-square&label=ISSUES&color=44cc11)
-![Downloads](https://img.shields.io/github/downloads/Chazut/ORBIT/total?style=flat-square&label=DOWNLOADS&color=44cc11)
+![Stars](https://img.shields.io/github/stars/Chazut/SPT-RaidReview?style=flat-square&label=STARS&color=007ec6)
+![Issues](https://img.shields.io/github/issues/Chazut/SPT-RaidReview?style=flat-square&label=ISSUES&color=44cc11)
+![Downloads](https://img.shields.io/github/downloads/Chazut/SPT-RaidReview/total?style=flat-square&label=DOWNLOADS&color=44cc11)
 
 A tool for the SPT community to review raid data (kills, looting, and positional movement) with the ability to replay events after escaping.
 
