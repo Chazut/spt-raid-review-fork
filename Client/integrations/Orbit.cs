@@ -42,6 +42,14 @@ namespace RAID_REVIEW
         /// the per-tick caller in mod.cs doesn't need a special-case.</summary>
         public static void RefreshAgentCache() { }
 
+        /// <summary>True while ORBIT's AI limiter has this bot dormant (body asleep, ORBIT still
+        /// driving). Rides along every POSITION sample so the replay can fade sleeping dots.</summary>
+        public static bool IsBotDormant(Player player)
+        {
+            if (player == null || !player.IsAI) return false;
+            return OrbitTelemetry.IsBotDormant(player.ProfileId);
+        }
+
         public static TrackingOrbitBotObjective GetBotObjectiveData(Player player, string sessionId, long time)
         {
             if (player == null || !player.IsAI) return null;

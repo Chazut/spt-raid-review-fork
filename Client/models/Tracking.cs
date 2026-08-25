@@ -83,6 +83,7 @@ namespace RAID_REVIEW
         public float health { get; set; }
         public float maxHealth { get; set; }
         public string decision { get; set; }
+        public bool dormant { get; set; }
 
         public TrackingPlayerData(
             string sessionId,
@@ -94,7 +95,8 @@ namespace RAID_REVIEW
             float dir,
             float health,
             float maxHealth,
-            string decision = ""
+            string decision = "",
+            bool dormant = false
         )
         {
             this.sessionId = sessionId;
@@ -107,6 +109,7 @@ namespace RAID_REVIEW
             this.health = health;
             this.maxHealth = maxHealth;
             this.decision = decision;
+            this.dormant = dormant;
         }
     }
 

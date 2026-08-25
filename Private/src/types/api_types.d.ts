@@ -20,6 +20,7 @@ export interface TrackingPositionalData {
   z: Number
   dir: Number
   decision?: string
+  dormant?: boolean
   created_at: Date
 }
 

@@ -1059,7 +1059,16 @@ namespace RAID_REVIEW
                                     catch { }
                                 }
 
-                                var trackingPlayerData = new TrackingPlayerData(sessionId, player.ProfileId, captureTime, playerPosition.x, playerPosition.y, playerPosition.z, dir, currentHealth, currentHealthMaximum, decision);
+                                // ORBIT AI limiter: flag dormant bots on every sample so the replay can
+                                // fade their dot. Guarded like every other ORBIT call (JIT safety).
+                                var dormant = false;
+                                if (ORBIT__DETECTED && player.IsAI)
+                                {
+                                    try { dormant = Orbit_Integration.IsBotDormant(player); }
+                                    catch { }
+                                }
+
+                                var trackingPlayerData = new TrackingPlayerData(sessionId, player.ProfileId, captureTime, playerPosition.x, playerPosition.y, playerPosition.z, dir, currentHealth, currentHealthMaximum, decision, dormant);
                                 _ = Telemetry.Send("POSITION", JsonConvert.SerializeObject(trackingPlayerData));
                             }
 
