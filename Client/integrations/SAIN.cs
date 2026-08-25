@@ -22,19 +22,17 @@ namespace RAID_REVIEW
 
                 Type sainBotControllerType = Type.GetType("SAIN.Components.BotManagerComponent, SAIN");
                 Type botComponentType = Type.GetType("SAIN.Components.BotComponent, SAIN");
-                Type ePersonalityType = Type.GetType("SAIN.Models.Preset.Personalities.EPersonality, SAIN");
 
                 if (sainBotControllerType == null)
                 {
                     LoggerInstance.Log.LogError("RAID_REVIEW :::: INFO :::: SAINBotController type not found.");
                     return;
                 }
-
-                if (ePersonalityType == null)
-                {
-                    LoggerInstance.Log.LogError("RAID_REVIEW :::: INFO :::: EPersonality type not found.");
-                    return;
-                }
+                // NOTE: no EPersonality type lookup anymore. SAIN 4.5 moved the enum's namespace, the
+                // Type.GetType came back null and the old early-return here silently killed the WHOLE
+                // integration (no difficulty / personality / bot names since the 4.1 migration). The enum
+                // Type was only used for Enum.GetName — personality.ToString() on the live value gives the
+                // same string with zero namespace coupling.
 
                 while (RAID_REVIEW.searchingForSainComponents)
                 {
@@ -91,15 +89,7 @@ namespace RAID_REVIEW
                                 var profile = profileProperty?.GetValue(info);
 
                                 var personality = info?.GetType().GetProperty("Personality")?.GetValue(info);
-
-                                if (personality != null && Enum.IsDefined(ePersonalityType, personality))
-                                {
-                                    trackingPlayer.mod_SAIN_brain = Enum.GetName(ePersonalityType, personality);
-                                }
-                                else
-                                {
-                                    trackingPlayer.mod_SAIN_brain = "UNKNOWN";
-                                }
+                                trackingPlayer.mod_SAIN_brain = personality?.ToString() ?? "UNKNOWN";
 
                                 var botDifficulty = info?.GetType().GetProperty("BotDifficulty")?.GetValue(info);
                                 if (botDifficulty == null)
