@@ -208,6 +208,15 @@ const api = {
         }
     },
 
+    getRaidOrbitGhostFights : async function(raidId: string) : Promise<any[]> {
+        try {
+            const response = await fetch(hostname + `/api/raids/${raidId}/orbit_ghost_fights`);
+            return await response.json();
+        } catch (error) {
+            return [];
+        }
+    },
+
     getRaidOrbitMainObjectives : async function(raidId: string) : Promise<any[]> {
         try {
             const response = await fetch(hostname + `/api/raids/${raidId}/orbit_main_objectives`);

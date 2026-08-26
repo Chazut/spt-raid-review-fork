@@ -517,6 +517,23 @@ namespace RAID_REVIEW
         private const long OrbitMainObjIntervalMs = 30000;
         public static void ResetOrbitMainObjFlag() { _orbitMainObjLastCapture = -999999; _orbitMainObjLastRevision = -1; }
 
+        // ── ORBIT Ghost Fight Capture (drain per tick — cheap no-op when nothing happened) ──
+        private void CaptureOrbitGhostFights()
+        {
+            if (!ORBIT__DETECTED) return;
+            try
+            {
+                var fights = Orbit_Integration.GetGhostFights(sessionId, stopwatch.ElapsedMilliseconds);
+                if (fights == null) return;
+                foreach (var fight in fights)
+                    _ = Telemetry.Send("ORBIT_GHOST_FIGHT", JsonConvert.SerializeObject(fight));
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning($"RAID_REVIEW :::: WARN :::: ORBIT ghost-fight capture failed: {ex.Message}");
+            }
+        }
+
         private void CaptureOrbitMainObjectives()
         {
             if (!ORBIT__DETECTED) return;
@@ -814,6 +831,7 @@ namespace RAID_REVIEW
                         Orbit_Integration.RefreshAgentCache();
                         CaptureOrbitField();
                         CaptureOrbitMainObjectives();
+                        CaptureOrbitGhostFights();
                     }
                     foreach (Player player in allPlayers)
                     {

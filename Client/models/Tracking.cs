@@ -113,6 +113,22 @@ namespace RAID_REVIEW
         }
     }
 
+    /// <summary>One simulated ghost fight (ORBIT AI limiter): an exchange between two dormant units,
+    /// rendered in the replay as a fight window between the two positions.</summary>
+    public class TrackingOrbitGhostFight
+    {
+        public string sessionId { get; set; }
+        public long time { get; set; }
+        public float aX { get; set; }
+        public float aY { get; set; }
+        public float aZ { get; set; }
+        public float bX { get; set; }
+        public float bY { get; set; }
+        public float bZ { get; set; }
+        public long durationMs { get; set; }
+        public int casualties { get; set; }
+    }
+
     public class TrackingPlayerDeadOrUnspawned 
     {
         public string sessionId { get; set; }

@@ -26,6 +26,22 @@ export interface TrackingPositionalData {
 }
 
 
+export interface TrackingOrbitGhostFight {
+  id: Number
+  raidId: String
+  time: Number
+  aX: Number
+  aY: Number
+  aZ: Number
+  bX: Number
+  bY: Number
+  bZ: Number
+  durationMs: Number
+  casualties: Number
+  created_at: Date
+}
+
+
 export interface TrackingRaidData {
   detectedMods: any;
   positionsTracked: string;

@@ -50,6 +50,27 @@ namespace RAID_REVIEW
             return OrbitTelemetry.IsBotDormant(player.ProfileId);
         }
 
+        /// <summary>Drains the simulated ghost fights resolved since the last call (null when none).</summary>
+        public static System.Collections.Generic.List<TrackingOrbitGhostFight> GetGhostFights(string sessionId, long time)
+        {
+            var drained = OrbitTelemetry.DrainGhostFights();
+            if (drained == null) return null;
+            var list = new System.Collections.Generic.List<TrackingOrbitGhostFight>(drained.Count);
+            foreach (var f in drained)
+            {
+                list.Add(new TrackingOrbitGhostFight
+                {
+                    sessionId = sessionId,
+                    time = time,
+                    aX = f.AX, aY = f.AY, aZ = f.AZ,
+                    bX = f.BX, bY = f.BY, bZ = f.BZ,
+                    durationMs = (long)(f.Duration * 1000f),
+                    casualties = f.Casualties,
+                });
+            }
+            return list;
+        }
+
         public static TrackingOrbitBotObjective GetBotObjectiveData(Player player, string sessionId, long time)
         {
             if (player == null || !player.IsAI) return null;

@@ -341,6 +341,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
     // Bot Objectives (Phobos integration)
     const [showBotObjectives, setShowBotObjectives] = useState(() => localStorage.getItem('rr_showBotObjectives') !== 'false')
     const [botObjectiveData, setBotObjectiveData] = useState<any[]>([])
+    const [ghostFightData, setGhostFightData] = useState<any[]>([])
+    const ghostFightLayerRef = useRef<L.LayerGroup | null>(null)
     const [botObjectiveCollapsed, setBotObjectiveCollapsed] = useState(true)
     const botObjectiveLayerRef = useRef<L.LayerGroup | null>(null)
 
@@ -1964,6 +1966,48 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
             }
         })()
     }, [raidId])
+
+    // ORBIT ghost fights (AI limiter): fetch once, rendered as timeline-aware exchange lines.
+    useEffect(() => {
+        if (ghostFightData.length > 0) return
+        ;(async () => {
+            const fights = await api.getRaidOrbitGhostFights(raidId)
+            if (fights && fights.length > 0) setGhostFightData(fights)
+        })()
+    }, [raidId])
+
+    // ORBIT ghost fights: while the replay time sits inside a simulated fight's window, draw an amber
+    // dashed exchange line between the two sides. Makes bloodless skirmishes visible and explains
+    // otherwise sourceless attrition damage on a dot. Cheap: 0-2 tiny layers per scrub tick.
+    useEffect(() => {
+        if (!MAP || !mapIsReady) return
+        if (ghostFightLayerRef.current) {
+            MAP.removeLayer(ghostFightLayerRef.current)
+            ghostFightLayerRef.current = null
+        }
+        if (ghostFightData.length === 0) return
+        const group = L.layerGroup()
+        for (const f of ghostFightData) {
+            const start = Number(f.time)
+            const end = start + Math.max(4000, Number(f.durationMs)) // short fights stay visible >= 4s
+            if (timeEndLimit < start || timeEndLimit > end) continue
+            const a: L.LatLngExpression = [Number(f.aZ), Number(f.aX)]
+            const b: L.LatLngExpression = [Number(f.bZ), Number(f.bX)]
+            group.addLayer(L.polyline([a, b], { color: '#FFB454', weight: 2, dashArray: '6 6', opacity: 0.85, interactive: false }))
+            const mid: L.LatLngExpression = [(Number(f.aZ) + Number(f.bZ)) / 2, (Number(f.aX) + Number(f.bX)) / 2]
+            const html = `<span style="font-size:14px">\u{1F4A5}</span><span class="tooltiptext event event-map text-sm">Ghost fight (${Math.round(Number(f.durationMs) / 1000)}s, ${f.casualties} killed)</span>`
+            const icon = L.divIcon({ className: 'ghost-fight-icon tooltip event', html })
+            group.addLayer(L.marker(mid, { icon, interactive: false }))
+        }
+        group.addTo(MAP)
+        ghostFightLayerRef.current = group
+        return () => {
+            if (ghostFightLayerRef.current && MAP) {
+                MAP.removeLayer(ghostFightLayerRef.current)
+                ghostFightLayerRef.current = null
+            }
+        }
+    }, [MAP, mapIsReady, ghostFightData, timeEndLimit])
 
     // Bot Objectives (Phobos): render destination markers on map (timeline-aware)
     useEffect(() => {

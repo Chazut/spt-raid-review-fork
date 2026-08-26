@@ -413,6 +413,25 @@ public class WsPacketHandler
                     break;
                 }
 
+                case "ORBIT_GHOST_FIGHT":
+                {
+                    if (raidId == null) break;
+                    await _db.ExecuteAsync(
+                        @"INSERT INTO orbit_ghost_fight (raidId, time, aX, aY, aZ, bX, bY, bZ, durationMs, casualties)
+                          VALUES ($raidId, $time, $aX, $aY, $aZ, $bX, $bY, $bZ, $durationMs, $casualties)",
+                        ("$raidId", raidId!),
+                        ("$time", GetString(payload, "time")),
+                        ("$aX", GetString(payload, "aX")),
+                        ("$aY", GetString(payload, "aY")),
+                        ("$aZ", GetString(payload, "aZ")),
+                        ("$bX", GetString(payload, "bX")),
+                        ("$bY", GetString(payload, "bY")),
+                        ("$bZ", GetString(payload, "bZ")),
+                        ("$durationMs", GetString(payload, "durationMs")),
+                        ("$casualties", GetString(payload, "casualties")));
+                    break;
+                }
+
                 case "ORBIT_MAIN_OBJECTIVES":
                 {
                     if (raidId == null) break;

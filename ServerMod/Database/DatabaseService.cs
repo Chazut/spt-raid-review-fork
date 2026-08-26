@@ -495,6 +495,23 @@ public class DatabaseService : IDisposable
                     FOREIGN KEY (""raidId"") REFERENCES raid(""raidId"")
                 );
             "),
+            ("add_orbit_ghost_fight_table", @"
+                CREATE TABLE IF NOT EXISTS orbit_ghost_fight (
+                    ""id"" INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ""raidId"" TEXT NOT NULL,
+                    ""time"" INTEGER NOT NULL,
+                    ""aX"" REAL DEFAULT 0,
+                    ""aY"" REAL DEFAULT 0,
+                    ""aZ"" REAL DEFAULT 0,
+                    ""bX"" REAL DEFAULT 0,
+                    ""bY"" REAL DEFAULT 0,
+                    ""bZ"" REAL DEFAULT 0,
+                    ""durationMs"" INTEGER NOT NULL DEFAULT 0,
+                    ""casualties"" INTEGER NOT NULL DEFAULT 0,
+                    ""created_at"" TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (""raidId"") REFERENCES raid(""raidId"")
+                );
+            "),
             ("add_orbit_main_objectives_table", @"
                 CREATE TABLE IF NOT EXISTS orbit_main_objectives (
                     ""id"" INTEGER PRIMARY KEY AUTOINCREMENT,
