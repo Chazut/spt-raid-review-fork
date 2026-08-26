@@ -99,5 +99,5 @@ public record PositionalDataEntry
     public float? Health { get; set; }
     public float? MaxHealth { get; set; }
     public string? Decision { get; set; }
-    public bool Dormant { get; set; }
+    public bool Ghost { get; set; }
 }

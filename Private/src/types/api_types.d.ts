@@ -20,7 +20,8 @@ export interface TrackingPositionalData {
   z: Number
   dir: Number
   decision?: string
-  dormant?: boolean
+  ghost?: boolean
+  dormant?: boolean // legacy key from pre-rename compiled raids
   created_at: Date
 }
 

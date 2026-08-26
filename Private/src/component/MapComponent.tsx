@@ -925,7 +925,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                     let currentDecision: string | undefined
                     let currentHealth: number | undefined
                     let maxHealth: number | undefined
-                    let currentDormant = false
+                    let currentGhost = false
                     let behaviorCat = null
                     let behaviorLine = ''
                     let healthLine = ''
@@ -936,13 +936,13 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                                 currentDecision = pp[di].decision
                                 currentHealth = pp[di].health
                                 maxHealth = pp[di].maxHealth
-                                currentDormant = !!(pp[di] as any).dormant
+                                currentGhost = !!((pp[di] as any).ghost ?? (pp[di] as any).dormant)
                                 break
                             }
                         }
                     }
-                    // ORBIT AI limiter: fade the dot of a sleeping bot so dormant vs awake reads at a glance.
-                    if (currentDormant) markerOpacity = Math.min(markerOpacity, 0.35)
+                    // ORBIT AI limiter: fade the dot of a sleeping bot so ghost vs awake reads at a glance.
+                    if (currentGhost) markerOpacity = Math.min(markerOpacity, 0.35)
                     if (showBehavior && !isBTR) {
                         behaviorCat = getBehaviorCategory(currentDecision)
                         const decisionLabel = currentDecision ? formatDecisionLabel(currentDecision) : ''
@@ -996,8 +996,8 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                             extractLine = `<br/><span style="color:#60A5FA">\u{1F6AA} Extracting: ${reason}</span>`
                         }
                     }
-                    const dormantLine = currentDormant ? '<br/><span style="color:#94A3B8">\u{1F4A4} Dormant (AI limiter)</span>' : ''
-                    const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})${healthLine}${behaviorLine}${dormantLine}${extractLine}${lootLine}`
+                    const ghostLine = currentGhost ? '<br/><span style="color:#94A3B8">\u{1F47B} Ghost (AI limiter)</span>' : ''
+                    const tip = `${getDisplayName(player)} (${getPlayerDifficultyAndBrain(player)})${healthLine}${behaviorLine}${ghostLine}${extractLine}${lootLine}`
                     const ringColor = behaviorCat && behaviorCat.key !== 'idle' && behaviorCat.key !== 'patrol' ? behaviorCat.color : undefined
                     const hpPct = (currentHealth != null && maxHealth != null && maxHealth > 0) ? Math.round((currentHealth / maxHealth) * 100) : undefined
                     const isFocused = playerFocusRef.current === playerId
@@ -1007,7 +1007,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                         marker = createPlayerMarker(endOfLine, pickedColor, player, proportionalScale, markerOpacity, pmcIndexMap[playerId], tip, ringColor, hpPct)
                         marker._rr_playerId = playerId
                         marker._rr_isDead = false
-                        marker._rr_normalOpacity = currentDormant ? 0.35 : 1
+                        marker._rr_normalOpacity = currentGhost ? 0.35 : 1
                         marker._rr_persistentPlayer = true
                         marker.addTo(MAP)
                         marker.on('mouseover', () => {
@@ -1030,7 +1030,7 @@ export default function MapComponent({ raidData, raidId, positions, intl_dir }) 
                         // Subsequent frames: mutate in place — no teardown/rebind.
                         updatePlayerMarker(marker, endOfLine, pickedColor, player, proportionalScale, markerOpacity, pmcIndexMap[playerId], tip, ringColor, hpPct, isFocused)
                         marker._rr_isDead = false
-                        marker._rr_normalOpacity = currentDormant ? 0.35 : 1
+                        marker._rr_normalOpacity = currentGhost ? 0.35 : 1
                     }
                     renderedPlayerIds.add(playerId)
                     // Keep the objective line's bot-end pinned to the live marker (see objectiveLineRef).

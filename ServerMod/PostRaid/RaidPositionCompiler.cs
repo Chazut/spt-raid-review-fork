@@ -71,7 +71,8 @@ public class RaidPositionCompiler
                     case "maxHealth": if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out var mh)) entry.MaxHealth = mh; break;
                     case "decision": entry.Decision = val; break;
                     // JsonElement.ToString() capitalizes booleans ("True"); accept every spelling.
-                    case "dormant": entry.Dormant = val == "True" || val == "true" || val == "1"; break;
+                    case "ghost":
+                    case "dormant": entry.Ghost = val == "True" || val == "true" || val == "1"; break; // "dormant": pre-rename recordings
                 }
             }
             allPositions.Add(entry);
