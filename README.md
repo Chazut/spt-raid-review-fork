@@ -3,9 +3,16 @@
 ![Issues](https://img.shields.io/github/issues/Chazut/SPT-RaidReview?style=flat-square&label=ISSUES&color=44cc11)
 ![Downloads](https://img.shields.io/github/downloads/Chazut/SPT-RaidReview/total?style=flat-square&label=DOWNLOADS&color=44cc11)
 
-A tool for the SPT community to review raid data (kills, looting, and positional movement) with the ability to replay events after escaping.
+Every raid you play gets recorded: positions, kills, loot, bot decisions.
+After extract, replay the whole thing on an interactive map, scrub the
+timeline, and find out what actually happened - who hunted you across the
+map, what that scav was thinking, where the good loot you missed was
+sitting.
 
 [Watch Preview](https://spt-raid-review.pages.dev/m2-res_1080p.mp4)
+
+Once installed, play a few raids, then hit **F5** in game (or browse to
+`http://127.0.0.1:7829`).
 
 ---
 
@@ -18,6 +25,21 @@ Download a compatible version from the **[releases](https://github.com/Chazut/SP
 
 ---
 
+### Features
+
+- Full raid replay on an interactive map (timeline scrubber, follow mode, floors)
+- Kill lines, death markers, killfeed details
+- Post-raid leaderboard
+- Charts: kills, looting, bots over time, factions...
+- Bot behavior rings and per-bot timeline
+- Loose loot and bot inventories on the map
+- Grenade trajectories, ballistics, hit flashes
+- Mod integrations: SAIN, ORBIT (ghosts included), QuestingBots, LootingBots
+- Faction badges for modded bots: UNTAR, RUAF, Black Division, ISB, Combine Soldiers
+- Fika support, see [REMOTE_HOST_AND_FIKA.md](REMOTE_HOST_AND_FIKA.md)
+
+---
+
 ### Project Structure
 
 | Component | Path | Tech | Purpose |
@@ -25,21 +47,6 @@ Download a compatible version from the **[releases](https://github.com/Chazut/SP
 | **Client** | `/Client` | C# .NET 4.7.2 / BepInEx | Game plugin: patches EFT methods, streams data via WebSocket |
 | **Server** | `/ServerMod` | C# .NET 10 / Kestrel | SPT 4.1 server mod: WebSocket + HTTP server, SQLite storage |
 | **Frontend** | `/Private` | React 18 + TypeScript + Vite | Web UI for raid review and replay |
-
----
-
-### Features
-
-- View raid data: kills, looting, players, bots, and positional info.
-- Replay raid events on the map with positional tracking, at up to 16x speed.
-- Click to follow specific players or events in the timeline.
-- Hover a bot for live health, behavior and loot; click through kill feeds.
-- Loose loot markers with prices, container contents, and bot inventory inspection.
-- Grenade trajectories, ballistics, and hit flashes during replay.
-- Toggle filters, visual markers, and map layers to refine the review.
-- SAIN integration: displays bot personality (Timmy, Chad, Rat...) and difficulty.
-- ORBIT integration: squad objectives on the map, extract reasons, and live bot decisions.
-- QuestingBots and LootingBots integrations for bot objective and looting overlays.
 
 ---
 
@@ -55,7 +62,7 @@ Download a compatible version from the **[releases](https://github.com/Chazut/SP
 ### Credits / Thanks
 
 - **Ekky**: original author.
-- **Chazu**: SPT 4.0.X and 4.1.X migrations, current maintainer.
+- **Chazut**: SPT 4.0.X and 4.1.X migrations, current maintainer.
 - The SPT team for the framework and docs.
 - The SPT Discord, especially the `#mod-development` and `#dev-community` folks.
 - The team behind [tarkov.dev](https://tarkov.dev) for open-sourcing the interactive map.

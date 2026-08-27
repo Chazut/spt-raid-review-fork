@@ -42,16 +42,62 @@ namespace RAID_REVIEW
         /// the per-tick caller in mod.cs doesn't need a special-case.</summary>
         public static void RefreshAgentCache() { }
 
+        // ORBIT 2.0 ghost/limiter API availability. Older ORBIT builds (1.3.x) lack IsBotDormant and
+        // DrainGhostFights: the first MissingMethod/TypeLoad flips this flag and every later call
+        // returns instantly, so RR keeps working against old ORBIT with the ghost features inert
+        // (no per-call exceptions, no log spam). The API calls live in NoInlining inner methods so
+        // the JIT failure surfaces at OUR callsite where it can be caught.
+        private static bool _ghostApiMissing;
+
         /// <summary>True while ORBIT's AI limiter has this bot as a ghost (body asleep, ORBIT still
         /// driving). Rides along every POSITION sample so the replay can fade ghost dots.</summary>
         public static bool IsBotGhost(Player player)
         {
-            if (player == null || !player.IsAI) return false;
-            return OrbitTelemetry.IsBotDormant(player.ProfileId);
+            if (_ghostApiMissing || player == null || !player.IsAI) return false;
+            try
+            {
+                return IsBotGhostInner(player.ProfileId);
+            }
+            catch (System.MissingMethodException)
+            {
+                _ghostApiMissing = true;
+                LoggerInstance.Log.LogInfo("RAID_REVIEW :::: ORBIT :::: ghost/limiter API not present (ORBIT older than 2.0) — ghost features disabled");
+                return false;
+            }
+            catch (System.TypeLoadException)
+            {
+                _ghostApiMissing = true;
+                return false;
+            }
         }
 
-        /// <summary>Drains the simulated ghost fights resolved since the last call (null when none).</summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static bool IsBotGhostInner(string profileId)
+            => OrbitTelemetry.IsBotDormant(profileId);
+
+        /// <summary>Drains the simulated ghost fights resolved since the last call (null when none,
+        /// or when the running ORBIT predates the 2.0 ghost API).</summary>
         public static System.Collections.Generic.List<TrackingOrbitGhostFight> GetGhostFights(string sessionId, long time)
+        {
+            if (_ghostApiMissing) return null;
+            try
+            {
+                return GetGhostFightsInner(sessionId, time);
+            }
+            catch (System.MissingMethodException)
+            {
+                _ghostApiMissing = true;
+                return null;
+            }
+            catch (System.TypeLoadException)
+            {
+                _ghostApiMissing = true;
+                return null;
+            }
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static System.Collections.Generic.List<TrackingOrbitGhostFight> GetGhostFightsInner(string sessionId, long time)
         {
             var drained = OrbitTelemetry.DrainGhostFights();
             if (drained == null) return null;
