@@ -23,7 +23,7 @@ using EFT.Interactive;
 
 namespace RAID_REVIEW
 {
-    [BepInPlugin("ekky.raidreview", "Raid Review", "1.6.0")]
+    [BepInPlugin("ekky.raidreview", "Raid Review", "1.6.1")]
     [BepInDependency("me.sol.sain", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("com.danw.questingbots", BepInDependency.DependencyFlags.SoftDependency)]
     [BepInDependency("com.janky.phobos", BepInDependency.DependencyFlags.SoftDependency)]
@@ -503,6 +503,7 @@ namespace RAID_REVIEW
             }
             catch (Exception ex)
             {
+                _phobosFieldLastCapture = now;
                 Logger.LogWarning($"RAID_REVIEW :::: WARN :::: Phobos field capture failed: {ex.Message}");
             }
         }
@@ -551,6 +552,8 @@ namespace RAID_REVIEW
             }
             catch (Exception ex)
             {
+                _orbitMainObjLastCapture = now;
+                _orbitMainObjLastRevision = revision;
                 Logger.LogWarning($"RAID_REVIEW :::: WARN :::: ORBIT main-objectives capture failed: {ex.Message}");
             }
         }
@@ -574,6 +577,9 @@ namespace RAID_REVIEW
             }
             catch (Exception ex)
             {
+                // Stamp the throttle even on failure — a persistent error must warn once per interval,
+                // not once per tick (issue ekky-llc#79: 2k+ identical warnings in an 8-minute raid).
+                _orbitFieldLastCapture = now;
                 Logger.LogWarning($"RAID_REVIEW :::: WARN :::: ORBIT field capture failed: {ex.Message}");
             }
         }

@@ -138,7 +138,33 @@ namespace RAID_REVIEW
             };
         }
 
+        // ORBIT 2.0 changed OrbitFieldZone.X/Y from int to float. Against an older ORBIT the JIT of the
+        // snapshot method throws MissingFieldException on every call — same one-shot guard as the ghost
+        // API so the field overlay goes inert with a single log line instead of spamming per tick.
+        private static bool _fieldApiMissing;
+
         public static TrackingOrbitField GetAdvectionFieldSnapshot(string sessionId, long time)
+        {
+            if (_fieldApiMissing) return null;
+            try
+            {
+                return GetAdvectionFieldSnapshotInner(sessionId, time);
+            }
+            catch (System.MissingMemberException)
+            {
+                _fieldApiMissing = true;
+                LoggerInstance.Log.LogInfo("RAID_REVIEW :::: ORBIT :::: field snapshot API mismatch (ORBIT older than 2.0) — hotspot field overlay disabled");
+                return null;
+            }
+            catch (System.TypeLoadException)
+            {
+                _fieldApiMissing = true;
+                return null;
+            }
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private static TrackingOrbitField GetAdvectionFieldSnapshotInner(string sessionId, long time)
         {
             var snap = OrbitTelemetry.GetFieldSnapshot();
             if (snap == null) return null;
